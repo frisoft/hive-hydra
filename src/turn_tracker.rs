@@ -2,14 +2,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+use async_trait::async_trait;
 
-pub const HASH_RETENTION_PERIOD: Duration = Duration::from_secs(3600);
+// pub const HASH_RETENTION_PERIOD: Duration = Duration::from_secs(3600);
+pub const HASH_RETENTION_PERIOD: Duration = Duration::from_secs(10);
 
+#[async_trait]
 pub trait TurnTracking {
-    fn tracked(&self, hash: u64) -> bool;
-    fn processing(&self, hash: u64);
-    fn processed(&self, hash: u64);
-    fn cleanup(&self);
+    async fn tracked(&self, hash: u64) -> bool;
+    async fn processing(&self, hash: u64);
+    async fn processed(&self, hash: u64);
+    async fn cleanup(&self);
 }
 
 pub struct TurnTracker {
@@ -33,27 +36,31 @@ impl TurnTracker {
     }
 }
 
+#[async_trait]
 impl TurnTracking for TurnTracker {
-    fn tracked(&self, hash: u64) -> bool {
-        let processing = self.processing_turns.blocking_lock();
-        let processed = self.processed_turns.blocking_lock();
+    async fn tracked(&self, hash: u64) -> bool {
+        let processing = self.processing_turns.lock().await;
+        let processed = self.processed_turns.lock().await;
         processing.contains_key(&hash) || processed.contains_key(&hash)
     }
 
-    fn processing(&self, hash: u64) {
-        self.processing_turns.blocking_lock()
+    async fn processing(&self, hash: u64) {
+        self.processing_turns.lock().await
             .insert(hash, Instant::now());
     }
 
-    fn processed(&self, hash: u64) {
-        self.processing_turns.blocking_lock().remove(&hash);
-        self.processed_turns.blocking_lock()
+    async fn processed(&self, hash: u64) {
+        self.processing_turns.lock().await.remove(&hash);
+        self.processed_turns.lock().await
             .insert(hash, Instant::now());
     }
 
-    fn cleanup(&self) {
+    async fn cleanup(&self) {
         let now = Instant::now();
-        let mut processed = self.processed_turns.blocking_lock();
+        let mut processed = self.processed_turns.lock().await;
         processed.retain(|_, timestamp| now.duration_since(*timestamp) < HASH_RETENTION_PERIOD);
+
+
+        println!("Processed_turns cleaned up");
     }
 }

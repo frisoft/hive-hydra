@@ -2,7 +2,6 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, Semaphore};
-use reqwest;
 
 mod turn_tracker;
 use turn_tracker::{TurnTracker, TurnTracking};
@@ -50,8 +49,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cleanup_tracker = turn_tracker.clone();
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_secs(60)).await;
-            cleanup_tracker.cleanup();
+            // Clean up every 2 sec (Will increase later)
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            cleanup_tracker.cleanup().await;
         }
     });
     
@@ -99,21 +99,27 @@ async fn producer_task(
     turn_tracker: TurnTracker,
     bot: Bot,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client = reqwest::Client::new();
-    let url = format!("{}{}", BASE_URL, bot.uri);
+    // let client = reqwest::Client::new();
+    // let url = format!("{}{}", BASE_URL, bot.uri);
     
     loop {
-        let game_strings: Vec<String> = client.get(&url)
-            .header("Authorization", format!("Bearer {}", bot.api_key))
-            .send()
-            .await?
-            .json()
-            .await?;
+        // HTTP client code for future use
+        // let game_strings: Vec<String> = client.get(&url)
+        //     .header("Authorization", format!("Bearer {}", bot.api_key))
+        //     .send()
+        //     .await?
+        //     .json()
+        //     .await?;
+
+        // Simulate server response with some game strings
+        let game_strings = vec![
+            "Base;InProgress;White[3];wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string()
+        ];
 
         for game_string in game_strings {
             let hash = calculate_hash(&game_string);
             
-            if turn_tracker.tracked(hash) {
+            if turn_tracker.tracked(hash).await {
                 continue;
             }
 
@@ -128,7 +134,7 @@ async fn producer_task(
                 },
             };
 
-            turn_tracker.processing(hash);
+            turn_tracker.processing(hash).await;
 
             if sender.send(turn).await.is_err() {
                 eprintln!("Failed to send turn to queue");
@@ -136,6 +142,7 @@ async fn producer_task(
             }
         }
 
+        println!("Start new cycle in 1 sec");
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
@@ -170,24 +177,37 @@ async fn process_turn(
 ) {
     let _permit = semaphore.acquire().await.expect("Failed to acquire semaphore");
 
-    let mut child = Command::new(turn.bot.bestmove_command)
+    let mut child = Command::new("../nokamute/target/debug/nokamute")
+        .arg("uhp")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
-        .expect("Failed to spawn command");
+        .expect("Failed to spawn nokamute command");
 
     if let Some(mut stdin) = child.stdin.take() {
         use std::io::Write;
-        stdin.write_all(turn.game_string.as_bytes())
-            .expect("Failed to write to stdin");
+        // Send newgame command
+        let newgame_command = format!("newgame {}\n", turn.game_string);
+        stdin.write_all(newgame_command.as_bytes())
+            .expect("Failed to write newgame command to stdin");
+            
+        // Send bestmove command
+        stdin.write_all(b"bestmove depth 1\n")
+            .expect("Failed to write bestmove command to stdin");
     }
 
-    let status = child.wait()
-        .expect("Failed to wait for child process");
-
-    println!("Process exited with status: {} for bot {}", status, turn.bot.name);
+    // Read output
+    use std::io::Read;
+    let output = child.wait_with_output()
+        .expect("Failed to read nokamute output");
     
-    turn_tracker.processed(turn.hash);
+    println!("Bot {} stdout:\n{}", turn.bot.name, String::from_utf8_lossy(&output.stdout));
+    println!("Bot {} stderr:\n{}", turn.bot.name, String::from_utf8_lossy(&output.stderr));
+
+    // println!("Process exited with status: {} for bot {}", status, turn.bot.name);
+    
+    turn_tracker.processed(turn.hash).await;
 }
 
 async fn cleanup_processes(active_processes: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>) {

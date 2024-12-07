@@ -14,3 +14,4 @@ futures = "0.3"
 chrono = "0.4"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 thiserror = "1.0"
+async-trait = "0.1"
