@@ -14,6 +14,7 @@ struct Bot {
     name: String,
     uri: String,
     api_key: String,
+    ai_command: String,
     bestmove_command: String,
 }
 
@@ -27,16 +28,18 @@ struct GameTurn {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let bots = vec![
         Bot {
-            name: "Bot1".to_string(),
-            uri: "/games/bot1".to_string(),
-            api_key: "key1".to_string(),
-            bestmove_command: "bot1_engine".to_string(),
+            name: "nokamute1".to_string(),
+            uri: "/games/nokamute1".to_string(),
+            api_key: "nokamute1_key".to_string(),
+            ai_command: "../nokamute/target/debug/nokamute uhp --threads=1".to_string(),
+            bestmove_command: "depth 1".to_string(),
         },
         Bot {
-            name: "Bot2".to_string(),
-            uri: "/games/bot2".to_string(),
-            api_key: "key2".to_string(),
-            bestmove_command: "bot2_engine".to_string(),
+            name: "nokamute1".to_string(),
+            uri: "/games/nokamute2".to_string(),
+            api_key: "nokamute2_key".to_string(),
+            ai_command: "../nokamute/target/debug/nokamute uhp".to_string(),
+            bestmove_command: "time 00:00::01".to_string(),
         },
     ];
 
@@ -130,6 +133,7 @@ async fn producer_task(
                     name: bot.name.clone(),
                     uri: bot.uri.clone(),
                     api_key: bot.api_key.clone(),
+                    ai_command: bot.ai_command.clone(),
                     bestmove_command: bot.bestmove_command.clone(),
                 },
             };
@@ -177,8 +181,22 @@ async fn process_turn(
 ) {
     let _permit = semaphore.acquire().await.expect("Failed to acquire semaphore");
 
-    let mut child = Command::new("../nokamute/target/debug/nokamute")
-        .arg("uhp")
+    println!("Starting AI '{}' for '{}' bot...", turn.bot.ai_command, turn.bot.name);
+    
+    // Split the ai_command into program and arguments
+    let command_parts: Vec<&str> = turn.bot.ai_command.split_whitespace().collect();
+    
+    if command_parts.is_empty() {
+        eprintln!("Error: Empty AI command for bot {}, command {}", turn.bot.name, turn.bot.ai_command);
+        turn_tracker.processed(turn.hash).await;
+        return;
+    }
+
+    let program = command_parts[0];
+    let args = &command_parts[1..];
+
+    let mut child = Command::new(program)
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -60,7 +60,6 @@ impl TurnTracking for TurnTracker {
         let mut processed = self.processed_turns.lock().await;
         processed.retain(|_, timestamp| now.duration_since(*timestamp) < HASH_RETENTION_PERIOD);
 
-
         println!("Processed_turns cleaned up");
     }
 }
