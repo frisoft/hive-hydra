@@ -9,20 +9,42 @@ use turn_tracker::{TurnTracker, TurnTracking};
 
 const MAX_CONCURRENT_PROCESSES: usize = 5;
 const QUEUE_CAPACITY: usize = 1000;
-const SERVER_URL: &str = "http://your-server.com/games";
+const BASE_URL: &str = "http://your-server.com";
+
+struct Bot {
+    name: String,
+    uri: String,
+    api_key: String,
+    bestmove_command: String,
+}
 
 struct GameTurn {
     game_string: String,
     hash: u64,
+    bot: Bot,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let bots = vec![
+        Bot {
+            name: "Bot1".to_string(),
+            uri: "/games/bot1".to_string(),
+            api_key: "key1".to_string(),
+            bestmove_command: "bot1_engine".to_string(),
+        },
+        Bot {
+            name: "Bot2".to_string(),
+            uri: "/games/bot2".to_string(),
+            api_key: "key2".to_string(),
+            bestmove_command: "bot2_engine".to_string(),
+        },
+    ];
+
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
     let receiver = Arc::new(Mutex::new(receiver));
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_PROCESSES));
     let active_processes = Arc::new(Mutex::new(Vec::new()));
-    
     let turn_tracker = TurnTracker::new();
     
     let cleanup_tracker = turn_tracker.clone();
@@ -33,10 +55,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
     
-    let producer_handle = tokio::spawn(producer_task(
-        sender,
-        turn_tracker.clone(),
-    ));
+    // Spawn a producer task for each bot
+    let mut producer_handles = Vec::new();
+    for bot in bots {
+        let producer_handle = tokio::spawn(producer_task(
+            sender.clone(),
+            turn_tracker.clone(),
+            bot,
+        ));
+        producer_handles.push(producer_handle);
+    }
     
     let consumer_handle = tokio::spawn(consumer_task(
         receiver,
@@ -45,9 +73,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         turn_tracker.clone(),
     ));
 
-    let (producer_result, consumer_result) = tokio::try_join!(producer_handle, consumer_handle)?;
-    producer_result?;
-    consumer_result?;
+    // Wait for all producers and the consumer
+    for handle in producer_handles {
+        if let Err(e) = handle.await? {
+            eprintln!("Producer error: {}", e);
+        }
+    }
+    if let Err(e) = consumer_handle.await? {
+        eprintln!("Consumer error: {}", e);
+    }
+    
     Ok(())
 }
 
@@ -62,11 +97,14 @@ fn calculate_hash(game_string: &str) -> u64 {
 async fn producer_task(
     sender: mpsc::Sender<GameTurn>,
     turn_tracker: TurnTracker,
+    bot: Bot,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client = reqwest::Client::new();
+    let url = format!("{}{}", BASE_URL, bot.uri);
     
     loop {
-        let game_strings: Vec<String> = client.get(SERVER_URL)
+        let game_strings: Vec<String> = client.get(&url)
+            .header("Authorization", format!("Bearer {}", bot.api_key))
             .send()
             .await?
             .json()
@@ -82,6 +120,12 @@ async fn producer_task(
             let turn = GameTurn {
                 game_string,
                 hash,
+                bot: Bot {
+                    name: bot.name.clone(),
+                    uri: bot.uri.clone(),
+                    api_key: bot.api_key.clone(),
+                    bestmove_command: bot.bestmove_command.clone(),
+                },
             };
 
             turn_tracker.processing(hash);
@@ -126,7 +170,7 @@ async fn process_turn(
 ) {
     let _permit = semaphore.acquire().await.expect("Failed to acquire semaphore");
 
-    let mut child = Command::new("your-command")
+    let mut child = Command::new(turn.bot.bestmove_command)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -141,7 +185,7 @@ async fn process_turn(
     let status = child.wait()
         .expect("Failed to wait for child process");
 
-    println!("Process exited with status: {}", status);
+    println!("Process exited with status: {} for bot {}", status, turn.bot.name);
     
     turn_tracker.processed(turn.hash);
 }
