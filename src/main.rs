@@ -1,4 +1,5 @@
-use std::process::{Command, Stdio};
+use std::process::{Command, Stdio, Child};
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, Semaphore};
@@ -15,7 +16,7 @@ struct Bot {
     uri: String,
     api_key: String,
     ai_command: String,
-    bestmove_command: String,
+    bestmove_command_args: String,
 }
 
 struct GameTurn {
@@ -32,14 +33,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             uri: "/games/nokamute1".to_string(),
             api_key: "nokamute1_key".to_string(),
             ai_command: "../nokamute/target/debug/nokamute uhp --threads=1".to_string(),
-            bestmove_command: "depth 1".to_string(),
+            bestmove_command_args: "depth 1".to_string(),
         },
         Bot {
             name: "nokamute1".to_string(),
             uri: "/games/nokamute2".to_string(),
             api_key: "nokamute2_key".to_string(),
             ai_command: "../nokamute/target/debug/nokamute uhp".to_string(),
-            bestmove_command: "time 00:00::01".to_string(),
+            bestmove_command_args: "time 00:00::01".to_string(),
         },
     ];
 
@@ -134,7 +135,7 @@ async fn producer_task(
                     uri: bot.uri.clone(),
                     api_key: bot.api_key.clone(),
                     ai_command: bot.ai_command.clone(),
-                    bestmove_command: bot.bestmove_command.clone(),
+                    bestmove_command_args: bot.bestmove_command_args.clone(),
                 },
             };
 
@@ -174,6 +175,30 @@ async fn consumer_task(
     }
 }
 
+fn spawn_ai_process(bot: &Bot) -> std::io::Result<Child> {
+    println!("Starting AI '{}' for '{}' bot...", bot.ai_command, bot.name);
+    
+    // Split the ai_command into program and arguments
+    let command_parts: Vec<&str> = bot.ai_command.split_whitespace().collect();
+    
+    if command_parts.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Error: Empty AI command for bot {}, command {}", bot.name, bot.ai_command)
+        ));
+    }
+
+    let program = command_parts[0];
+    let args = &command_parts[1..];
+    
+    Command::new(program)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+}
+
 async fn process_turn(
     turn: GameTurn,
     semaphore: Arc<Semaphore>,
@@ -181,50 +206,63 @@ async fn process_turn(
 ) {
     let _permit = semaphore.acquire().await.expect("Failed to acquire semaphore");
 
-    println!("Starting AI '{}' for '{}' bot...", turn.bot.ai_command, turn.bot.name);
-    
-    // Split the ai_command into program and arguments
-    let command_parts: Vec<&str> = turn.bot.ai_command.split_whitespace().collect();
-    
-    if command_parts.is_empty() {
-        eprintln!("Error: Empty AI command for bot {}, command {}", turn.bot.name, turn.bot.ai_command);
-        turn_tracker.processed(turn.hash).await;
-        return;
-    }
-
-    let program = command_parts[0];
-    let args = &command_parts[1..];
-
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to spawn nokamute command");
+    let mut child = match spawn_ai_process(&turn.bot) {
+        Ok(child) => child,
+        Err(e) => {
+            eprintln!("Failed to spawn AI process for bot {}: {}", turn.bot.name, e);
+            turn_tracker.processed(turn.hash).await;
+            return;
+        }
+    };
 
     if let Some(mut stdin) = child.stdin.take() {
-        use std::io::Write;
         // Send newgame command
         let newgame_command = format!("newgame {}\n", turn.game_string);
-        stdin.write_all(newgame_command.as_bytes())
-            .expect("Failed to write newgame command to stdin");
-            
+        print!("{}", newgame_command);
+        if let Err(e) = stdin.write_all(newgame_command.as_bytes()) {
+            eprintln!(
+                "Failed to write newgame command to stdin for bot {}: {}",
+                turn.bot.name, e
+            );
+            turn_tracker.processed(turn.hash).await;
+            return;
+        }
+
         // Send bestmove command
-        stdin.write_all(b"bestmove depth 1\n")
-            .expect("Failed to write bestmove command to stdin");
+        let bestmove_command = format!("bestmove {}\n", turn.bot.bestmove_command_args);
+        print!("{}", bestmove_command);
+        if let Err(e) = stdin.write_all(bestmove_command.as_bytes()) {
+            eprintln!(
+                "Failed to write bestmove command to stdin for bot {}: {}",
+                turn.bot.name, e
+            );
+            turn_tracker.processed(turn.hash).await;
+            return;
+        }
     }
 
     // Read output
-    use std::io::Read;
-    let output = child.wait_with_output()
-        .expect("Failed to read nokamute output");
-    
-    println!("Bot {} stdout:\n{}", turn.bot.name, String::from_utf8_lossy(&output.stdout));
-    println!("Bot {} stderr:\n{}", turn.bot.name, String::from_utf8_lossy(&output.stderr));
+    match child.wait_with_output() {
+        Ok(output) => {
+            println!(
+                "Bot {} stdout:\n{}",
+                turn.bot.name,
+                String::from_utf8_lossy(&output.stdout)
+            );
+            println!(
+                "Bot {} stderr:\n{}",
+                turn.bot.name,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Err(e) => {
+            eprintln!(
+                "Failed to read output from AI process for bot {}: {}",
+                turn.bot.name, e
+            );
+        }
+    }
 
-    // println!("Process exited with status: {} for bot {}", status, turn.bot.name);
-    
     turn_tracker.processed(turn.hash).await;
 }
 
