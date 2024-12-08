@@ -42,6 +42,7 @@ impl From<std::string::FromUtf8Error> for AiError {
 pub enum ParseError {
     NoOutput,
     MissingBestMove(String),
+    BestMoveError(String),
     MissingOk(String),
 }
 
@@ -50,6 +51,7 @@ impl std::fmt::Display for ParseError {
         match self {
             ParseError::NoOutput => write!(f, "No output received from AI"),
             ParseError::MissingBestMove(msg) => write!(f, "No bestmove found in output: {}", msg),
+            ParseError::BestMoveError(msg) => write!(f, "bestmove command error in output: {}", msg),
             ParseError::MissingOk(msg) => write!(f, "Missing 'ok' confirmation in output: {}", msg),
         }
     }
@@ -103,6 +105,9 @@ pub fn parse_ai_output(output: &str) -> Result<String, ParseError> {
         .ok_or(ParseError::MissingBestMove(output.to_string()))?;
 
     let bestmove = remaining_lines[bestmove_pos];
+    if bestmove.starts_with("err ") {
+        return Err(ParseError::BestMoveError(output.to_string()));
+    }
 
     if !remaining_lines[bestmove_pos + 1..].contains(&"ok") {
         return Err(ParseError::MissingOk(output.to_string()));
@@ -182,5 +187,18 @@ mod tests {
             ok
         "#;
         assert!(matches!(parse_ai_output(output), Err(ParseError::MissingBestMove(_))));
+    }
+
+    #[test]
+    fn test_bestmove_error() {
+        let output = r#"
+            id nokamute cargo-1.0.0
+            Mosquito;Ladybug;Pillbug
+            ok
+            Base;InProgress;White[3];wS1
+            ok
+            err UnrecognizedCommand("time 00:00:0E")
+        "#;
+        assert!(matches!(parse_ai_output(output), Err(ParseError::BestMoveError(_))));
     }
 }
