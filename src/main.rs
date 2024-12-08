@@ -102,54 +102,6 @@ fn calculate_hash(game_string: &str) -> u64 {
     hasher.finish()
 }
 
-// async fn producer_task(
-//     sender: mpsc::Sender<GameTurn>,
-//     turn_tracker: TurnTracker,
-//     bot: Bot,
-// ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-//     // let client = reqwest::Client::new();
-//     // let url = format!("{}{}", BASE_URL, bot.uri);
-    
-//     loop {
-//         // HTTP client code for future use
-//         // let game_strings: Vec<String> = client.get(&url)
-//         //     .header("Authorization", format!("Bearer {}", bot.api_key))
-//         //     .send()
-//         //     .await?
-//         //     .json()
-//         //     .await?;
-
-//         // Simulate server response with some game strings
-//         let game_strings = vec![
-//             "Base;InProgress;White[3];wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string()
-//         ];
-
-//         for game_string in game_strings {
-//             let hash = calculate_hash(&game_string);
-            
-//             if turn_tracker.tracked(hash).await {
-//                 continue;
-//             }
-
-//             let turn = GameTurn {
-//                 game_string,
-//                 hash,
-//                 bot: bot.clone(),
-//             };
-
-//             turn_tracker.processing(hash).await;
-
-//             if sender.send(turn).await.is_err() {
-//                 eprintln!("Failed to send turn to queue");
-//                 continue;
-//             }
-//         }
-
-//         println!("Start new cycle in 1 sec");
-//         tokio::time::sleep(Duration::from_secs(1)).await;
-//     }
-// }
-
 async fn producer_task(
     sender: mpsc::Sender<GameTurn>,
     turn_tracker: TurnTracker,
