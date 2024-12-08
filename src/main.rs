@@ -6,11 +6,13 @@ use tokio::sync::{mpsc, Mutex, Semaphore};
 
 mod turn_tracker;
 use turn_tracker::{TurnTracker, TurnTracking};
+mod ai;
 
 const MAX_CONCURRENT_PROCESSES: usize = 5;
 const QUEUE_CAPACITY: usize = 1000;
 const BASE_URL: &str = "http://your-server.com";
 
+#[derive(Clone)]
 struct Bot {
     name: String,
     uri: String,
@@ -130,13 +132,7 @@ async fn producer_task(
             let turn = GameTurn {
                 game_string,
                 hash,
-                bot: Bot {
-                    name: bot.name.clone(),
-                    uri: bot.uri.clone(),
-                    api_key: bot.api_key.clone(),
-                    ai_command: bot.ai_command.clone(),
-                    bestmove_command_args: bot.bestmove_command_args.clone(),
-                },
+                bot: bot.clone(),
             };
 
             turn_tracker.processing(hash).await;
@@ -175,30 +171,6 @@ async fn consumer_task(
     }
 }
 
-fn spawn_ai_process(bot: &Bot) -> std::io::Result<Child> {
-    println!("Starting AI '{}' for '{}' bot...", bot.ai_command, bot.name);
-    
-    // Split the ai_command into program and arguments
-    let command_parts: Vec<&str> = bot.ai_command.split_whitespace().collect();
-    
-    if command_parts.is_empty() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("Error: Empty AI command for bot {}, command {}", bot.name, bot.ai_command)
-        ));
-    }
-
-    let program = command_parts[0];
-    let args = &command_parts[1..];
-    
-    Command::new(program)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-}
-
 async fn process_turn(
     turn: GameTurn,
     semaphore: Arc<Semaphore>,
@@ -206,7 +178,7 @@ async fn process_turn(
 ) {
     let _permit = semaphore.acquire().await.expect("Failed to acquire semaphore");
 
-    let mut child = match spawn_ai_process(&turn.bot) {
+    let child = match ai::spawn_process(&turn.bot.ai_command, &turn.bot.name) {
         Ok(child) => child,
         Err(e) => {
             eprintln!("Failed to spawn AI process for bot {}: {}", turn.bot.name, e);
@@ -215,51 +187,13 @@ async fn process_turn(
         }
     };
 
-    if let Some(mut stdin) = child.stdin.take() {
-        // Send newgame command
-        let newgame_command = format!("newgame {}\n", turn.game_string);
-        print!("{}", newgame_command);
-        if let Err(e) = stdin.write_all(newgame_command.as_bytes()) {
-            eprintln!(
-                "Failed to write newgame command to stdin for bot {}: {}",
-                turn.bot.name, e
-            );
-            turn_tracker.processed(turn.hash).await;
-            return;
-        }
-
-        // Send bestmove command
-        let bestmove_command = format!("bestmove {}\n", turn.bot.bestmove_command_args);
-        print!("{}", bestmove_command);
-        if let Err(e) = stdin.write_all(bestmove_command.as_bytes()) {
-            eprintln!(
-                "Failed to write bestmove command to stdin for bot {}: {}",
-                turn.bot.name, e
-            );
-            turn_tracker.processed(turn.hash).await;
-            return;
-        }
-    }
-
-    // Read output
-    match child.wait_with_output() {
-        Ok(output) => {
-            println!(
-                "Bot {} stdout:\n{}",
-                turn.bot.name,
-                String::from_utf8_lossy(&output.stdout)
-            );
-            println!(
-                "Bot {} stderr:\n{}",
-                turn.bot.name,
-                String::from_utf8_lossy(&output.stderr)
-            );
+    match ai::run_commands(child, &turn.game_string, &turn.bot.bestmove_command_args).await {
+        Ok(bestmove) => {
+            println!("Bot '{}' bestmove: '{}'", turn.bot.name, bestmove);
+            // Here you can handle the bestmove (e.g., send it to the server)
         }
         Err(e) => {
-            eprintln!(
-                "Failed to read output from AI process for bot {}: {}",
-                turn.bot.name, e
-            );
+            eprintln!("Error running AI commands for bot '{}': '{}'", turn.bot.name, e);
         }
     }
 
