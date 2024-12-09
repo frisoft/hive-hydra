@@ -1,2 +1,3 @@
-# hivegame-uhp-ai
-A client/server wrapper to allow an UHP AI program to play on hivegame.com
+# Hive Hydra
+
+A client/server wrapper for multiple Bot accounts on hivegame.com to and multiple UHP AI engines.
