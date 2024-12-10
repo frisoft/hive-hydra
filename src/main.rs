@@ -9,9 +9,10 @@ use turn_tracker::{TurnTracker, TurnTracking};
 mod ai;
 mod hivegame_bot_api;
 use hivegame_bot_api::HiveGameApi;
+mod config;
+use config::{Config, BotConfig};
+mod cli;
 
-const MAX_CONCURRENT_PROCESSES: usize = 5;
-const QUEUE_CAPACITY: usize = 1000;
 const BASE_URL: &str = "http://your-server.com";
 
 #[derive(Clone)]
@@ -26,31 +27,19 @@ struct Bot {
 struct GameTurn {
     game_string: String,
     hash: u64,
-    bot: Bot,
+    bot: BotConfig,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let bots = vec![
-        Bot {
-            name: "nokamute1".to_string(),
-            uri: "/games/nokamute1".to_string(),
-            api_key: "nokamute1_key".to_string(),
-            ai_command: "../nokamute/target/debug/nokamute uhp --threads=1".to_string(),
-            bestmove_command_args: "depth 1".to_string(),
-        },
-        Bot {
-            name: "nokamute1".to_string(),
-            uri: "/games/nokamute2".to_string(),
-            api_key: "nokamute2_key".to_string(),
-            ai_command: "../nokamute/target/debug/nokamute uhp".to_string(),
-            bestmove_command_args: "time 00:00:01".to_string(),
-        },
-    ];
+    // Parse command line arguments
+    let cli = cli::Cli::parse();
 
-    let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+    // Load configuration from specified file
+    let config = Config::load_from(cli.config)?;
+    let (sender, receiver) = mpsc::channel(config.queue_capacity);
     let receiver = Arc::new(Mutex::new(receiver));
-    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_PROCESSES));
+    let semaphore = Arc::new(Semaphore::new(config.max_concurrent_processes));
     let active_processes = Arc::new(Mutex::new(Vec::new()));
     let turn_tracker = TurnTracker::new();
     
@@ -65,10 +54,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     
     // Spawn a producer task for each bot
     let mut producer_handles = Vec::new();
-    for bot in bots {
+    for bot in config.bots {
         let producer_handle = tokio::spawn(producer_task(
             sender.clone(),
             turn_tracker.clone(),
+            config.base_url.clone(),
             bot,
         ));
         producer_handles.push(producer_handle);
@@ -105,9 +95,10 @@ fn calculate_hash(game_string: &str) -> u64 {
 async fn producer_task(
     sender: mpsc::Sender<GameTurn>,
     turn_tracker: TurnTracker,
-    bot: Bot,
+    base_url: String,
+    bot: BotConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let api = HiveGameApi::new(BASE_URL.to_string());
+    let api = HiveGameApi::new(base_url);
     
     loop {
         match api.fake_get_games(&bot.uri, &bot.api_key).await {
