@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, Semaphore};
+use tracing::{info, warn, error, debug};
 
 mod turn_tracker;
 use turn_tracker::{TurnTracker, TurnTracking};
@@ -10,6 +11,7 @@ use hivegame_bot_api::HiveGameApi;
 mod config;
 use config::{BotConfig, Config};
 mod cli;
+mod logging;
 
 struct GameTurn {
     game_string: String,
@@ -19,29 +21,41 @@ struct GameTurn {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Initialize logging first
+    logging::setup_logging()?;
+    info!("Starting Hive Hydra");
+
     // Parse command line arguments
     let cli = cli::Cli::parse();
+    debug!("CLI arguments parsed");
 
     // Load configuration from specified file
     let config = Config::load_from(cli.config)?;
+    info!("Configuration loaded, max concurrent processes: {}", config.max_concurrent_processes);
+
     let (sender, receiver) = mpsc::channel(config.queue_capacity);
     let receiver = Arc::new(Mutex::new(receiver));
     let semaphore = Arc::new(Semaphore::new(config.max_concurrent_processes));
     let active_processes = Arc::new(Mutex::new(Vec::new()));
     let turn_tracker = TurnTracker::new();
 
+    info!("Initialized channel with capacity: {}", config.queue_capacity);
+
     let cleanup_tracker = turn_tracker.clone();
     tokio::spawn(async move {
         loop {
-            // Clean up every 2 sec (Will increase later)
             tokio::time::sleep(Duration::from_secs(2)).await;
             cleanup_tracker.cleanup().await;
+            debug!("Cleanup cycle completed");
         }
     });
 
     // Spawn a producer task for each bot
     let mut producer_handles = Vec::new();
+    info!("Starting producer tasks for {} bots", config.bots.len());
+    
     for bot in config.bots {
+        info!("Spawning producer task for bot: {}", bot.name);
         let producer_handle = tokio::spawn(producer_task(
             sender.clone(),
             turn_tracker.clone(),
@@ -57,15 +71,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         active_processes,
         turn_tracker.clone(),
     ));
+    info!("Consumer task started");
 
     // Wait for all producers and the consumer
     for handle in producer_handles {
         if let Err(e) = handle.await? {
-            eprintln!("Producer error: {}", e);
+            error!("Producer task error: {}", e);
         }
     }
     if let Err(e) = consumer_handle.await? {
-        eprintln!("Consumer error: {}", e);
+        error!("Consumer task error: {}", e);
     }
 
     Ok(())
@@ -86,14 +101,17 @@ async fn producer_task(
     bot: BotConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let api = HiveGameApi::new(base_url);
+    info!("Producer task started for bot: {}", bot.name);
 
     loop {
         match api.fake_get_games(&bot.uri, &bot.api_key).await {
             Ok(game_strings) => {
+                debug!("Retrieved {} games for bot {}", game_strings.len(), bot.name);
                 for game_string in game_strings {
                     let hash = calculate_hash(&game_string);
 
                     if turn_tracker.tracked(hash).await {
+                        debug!("Game {} already tracked for bot {}", hash, bot.name);
                         continue;
                     }
 
@@ -104,17 +122,18 @@ async fn producer_task(
                     };
 
                     turn_tracker.processing(hash).await;
+                    debug!("Processing game {} for bot {}", hash, bot.name);
 
                     if sender.send(turn).await.is_err() {
-                        eprintln!("Failed to send turn to queue");
+                        error!("Failed to send turn to queue for bot {}", bot.name);
                         continue;
                     }
                 }
             }
-            Err(e) => eprintln!("Failed to fetch games for bot {}: {}", bot.name, e),
+            Err(e) => error!("Failed to fetch games for bot {}: {}", bot.name, e),
         }
 
-        println!("Start new cycle in 1 sec");
+        debug!("Starting new cycle for bot {}", bot.name);
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
@@ -125,12 +144,19 @@ async fn consumer_task(
     active_processes: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     turn_tracker: TurnTracker,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    info!("Consumer task started");
+    
     loop {
         let mut rx = receiver.lock().await;
         if let Some(turn) = rx.recv().await {
             drop(rx);
+            debug!("Received turn for bot {}", turn.bot.name);
 
-            let handle = tokio::spawn(process_turn(turn, semaphore.clone(), turn_tracker.clone()));
+            let handle = tokio::spawn(process_turn(
+                turn,
+                semaphore.clone(),
+                turn_tracker.clone()
+            ));
 
             active_processes.lock().await.push(handle);
             cleanup_processes(active_processes.clone()).await;
@@ -139,18 +165,21 @@ async fn consumer_task(
 }
 
 async fn process_turn(turn: GameTurn, semaphore: Arc<Semaphore>, turn_tracker: TurnTracker) {
-    let _permit = semaphore
-        .acquire()
-        .await
-        .expect("Failed to acquire semaphore");
+    let _permit = match semaphore.acquire().await {
+        Ok(permit) => permit,
+        Err(e) => {
+            error!("Failed to acquire semaphore for bot {}: {}", turn.bot.name, e);
+            turn_tracker.processed(turn.hash).await;
+            return;
+        }
+    };
+
+    debug!("Processing turn for bot {} with hash {}", turn.bot.name, turn.hash);
 
     let child = match ai::spawn_process(&turn.bot.ai_command, &turn.bot.name) {
         Ok(child) => child,
         Err(e) => {
-            eprintln!(
-                "Failed to spawn AI process for bot {}: {}",
-                turn.bot.name, e
-            );
+            error!("Failed to spawn AI process for bot {}: {}", turn.bot.name, e);
             turn_tracker.processed(turn.hash).await;
             return;
         }
@@ -158,21 +187,24 @@ async fn process_turn(turn: GameTurn, semaphore: Arc<Semaphore>, turn_tracker: T
 
     match ai::run_commands(child, &turn.game_string, &turn.bot.bestmove_command_args).await {
         Ok(bestmove) => {
-            println!("Bot '{}' bestmove: '{}'", turn.bot.name, bestmove);
+            info!("Bot '{}' bestmove: '{}'", turn.bot.name, bestmove);
             // Here you can handle the bestmove (e.g., send it to the server)
         }
         Err(e) => {
-            eprintln!(
-                "Error running AI commands for bot '{}': '{}'",
-                turn.bot.name, e
-            );
+            error!("Error running AI commands for bot '{}': '{}'", turn.bot.name, e);
         }
     }
 
     turn_tracker.processed(turn.hash).await;
+    debug!("Turn processed for bot {} with hash {}", turn.bot.name, turn.hash);
 }
 
 async fn cleanup_processes(active_processes: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>) {
     let mut processes = active_processes.lock().await;
+    let initial_count = processes.len();
     processes.retain(|handle| !handle.is_finished());
+    let removed = initial_count - processes.len();
+    if removed > 0 {
+        debug!("Cleaned up {} finished processes", removed);
+    }
 }
