@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
+use tracing::{info};
 
 #[derive(Debug)]
 pub enum AiError {
@@ -62,7 +63,7 @@ impl std::fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 
 pub fn spawn_process(command: &str, name: &str) -> std::io::Result<Child> {
-    println!("Starting AI '{}' for '{}'...", command, name);
+    info!("Starting AI '{}' for '{}'...", command, name);
 
     let command_parts: Vec<&str> = command.split_whitespace().collect();
 

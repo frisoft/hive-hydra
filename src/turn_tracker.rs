@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+use tracing::{info};
 
 // pub const HASH_RETENTION_PERIOD: Duration = Duration::from_secs(3600);
 pub const HASH_RETENTION_PERIOD: Duration = Duration::from_secs(10);
@@ -64,6 +65,6 @@ impl TurnTracking for TurnTracker {
         let mut processed = self.processed_turns.lock().await;
         processed.retain(|_, timestamp| now.duration_since(*timestamp) < HASH_RETENTION_PERIOD);
 
-        println!("Processed_turns cleaned up");
+        info!("Processed_turns cleaned up");
     }
 }
