@@ -34,7 +34,8 @@ impl HiveGameApi {
     pub async fn get_games(&self, uri: &str, api_key: &str) -> Result<Vec<String>, ApiError> {
         let url = format!("{}{}", self.base_url, uri);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", format!("Bearer {}", api_key))
             .send()
@@ -48,15 +49,17 @@ impl HiveGameApi {
             });
         }
 
-        response.json().await
-            .map_err(|e| ApiError::RequestError(e))
+        response.json().await.map_err(|e| ApiError::RequestError(e))
     }
 
     /// Function to use for manual testing without real connection
-    pub async fn fake_get_games(&self, _uri: &str, _api_key: &str) -> Result<Vec<String>, ApiError> {
-        let game_strings = vec![
-            "Base;InProgress;White[3];wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string()
-        ];
+    pub async fn fake_get_games(
+        &self,
+        _uri: &str,
+        _api_key: &str,
+    ) -> Result<Vec<String>, ApiError> {
+        let game_strings =
+            vec!["Base;InProgress;White[3];wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string()];
         Ok(game_strings)
     }
 
@@ -69,7 +72,8 @@ impl HiveGameApi {
     ) -> Result<(), ApiError> {
         let url = format!("{}/games/{}/move", self.base_url, game_id);
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", api_key))
             .json(&move_notation)
@@ -91,8 +95,8 @@ impl HiveGameApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::{Mock, MockServer, ResponseTemplate};
     use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
     async fn test_get_games() {
@@ -102,8 +106,9 @@ mod tests {
         // Create mock response
         Mock::given(method("GET"))
             .and(path("/games/bot1"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(vec!["Base;InProgress;White[3];wS1;bG1"]))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(vec!["Base;InProgress;White[3];wS1;bG1"]),
+            )
             .mount(&mock_server)
             .await;
 
@@ -138,8 +143,7 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/games/error"))
-            .respond_with(ResponseTemplate::new(404)
-                .set_body_string("Not found"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
             .mount(&mock_server)
             .await;
 

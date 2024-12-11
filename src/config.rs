@@ -40,17 +40,13 @@ impl Config {
         let env_vars: HashMap<String, String> = std::env::vars().collect();
         for bot in &mut config.bots {
             let prefix = format!("HIVE_HYDRA_BOT_{}_", bot.name.to_uppercase());
-            
+
             if let Some(value) = env_vars.get(&format!("{}API_KEY", prefix)) {
                 bot.api_key = value.clone();
             }
         }
 
         Ok(config)
-    }
-
-    pub fn load() -> Result<Self, ConfigError> {
-        Self::load_from("config.yaml")
     }
 }
 
@@ -59,8 +55,8 @@ mod tests {
     use super::*;
     use std::env;
     use std::fs;
-    use tempfile::TempDir;
     use std::io::Write;
+    use tempfile::TempDir;
 
     #[test]
     fn test_env_override_with_custom_config() {
@@ -90,10 +86,14 @@ bots:
 
         // Load config and test
         let config = Config::load_from(&file_path).unwrap();
-        assert_eq!(config.max_concurrent_processes, 10,
-            "max_concurrent_processes should be overridden by environment variable");
-        assert_eq!(config.bots[0].api_key, "test_key_1",
-            "bot api_key should be overridden by environment variable");
+        assert_eq!(
+            config.max_concurrent_processes, 10,
+            "max_concurrent_processes should be overridden by environment variable"
+        );
+        assert_eq!(
+            config.bots[0].api_key, "test_key_1",
+            "bot api_key should be overridden by environment variable"
+        );
 
         // Cleanup
         env::remove_var("HIVE_HYDRA_MAX_CONCURRENT_PROCESSES");

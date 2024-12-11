@@ -1,5 +1,5 @@
-use std::process::{Command, Stdio, Child};
 use std::io::Write;
+use std::process::{Child, Command, Stdio};
 
 #[derive(Debug)]
 pub enum AiError {
@@ -51,7 +51,9 @@ impl std::fmt::Display for ParseError {
         match self {
             ParseError::NoOutput => write!(f, "No output received from AI"),
             ParseError::MissingBestMove(msg) => write!(f, "No bestmove found in output: {}", msg),
-            ParseError::BestMoveError(msg) => write!(f, "bestmove command error in output: {}", msg),
+            ParseError::BestMoveError(msg) => {
+                write!(f, "bestmove command error in output: {}", msg)
+            }
             ParseError::MissingOk(msg) => write!(f, "Missing 'ok' confirmation in output: {}", msg),
         }
     }
@@ -61,19 +63,19 @@ impl std::error::Error for ParseError {}
 
 pub fn spawn_process(command: &str, name: &str) -> std::io::Result<Child> {
     println!("Starting AI '{}' for '{}'...", command, name);
-    
+
     let command_parts: Vec<&str> = command.split_whitespace().collect();
-    
+
     if command_parts.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("Error: Empty AI command for {}, command {}", name, command)
+            format!("Error: Empty AI command for {}, command {}", name, command),
         ));
     }
 
     let program = command_parts[0];
     let args = &command_parts[1..];
-    
+
     Command::new(program)
         .args(args)
         .stdin(Stdio::piped())
@@ -93,14 +95,19 @@ pub fn parse_ai_output(output: &str) -> Result<String, ParseError> {
         .filter(|line| !line.is_empty())
         .collect();
 
-    let first_ok_pos = lines.iter().position(|&line| line == "ok")
+    let first_ok_pos = lines
+        .iter()
+        .position(|&line| line == "ok")
         .ok_or(ParseError::MissingOk(output.to_string()))?;
     let remaining_lines = &lines[first_ok_pos + 1..];
-    let second_ok_pos = remaining_lines.iter().position(|&line| line == "ok")
+    let second_ok_pos = remaining_lines
+        .iter()
+        .position(|&line| line == "ok")
         .ok_or(ParseError::MissingOk(output.to_string()))?;
 
     let remaining_lines = &remaining_lines[second_ok_pos + 1..];
-    let bestmove_pos = remaining_lines.iter()
+    let bestmove_pos = remaining_lines
+        .iter()
         .position(|&line| line != "ok")
         .ok_or(ParseError::MissingBestMove(output.to_string()))?;
 
@@ -116,12 +123,17 @@ pub fn parse_ai_output(output: &str) -> Result<String, ParseError> {
     Ok(bestmove.to_string())
 }
 
-pub async fn run_commands(mut child: Child, game_string: &str, bestmove_args: &str) -> Result<String, AiError> {
-    let stdin = child.stdin.take()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Failed to open stdin"))?;
+pub async fn run_commands(
+    mut child: Child,
+    game_string: &str,
+    bestmove_args: &str,
+) -> Result<String, AiError> {
+    let stdin = child.stdin.take().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Failed to open stdin")
+    })?;
 
     let mut stdin = stdin;
-    
+
     // Send newgame command
     let newgame_command = format!("newgame {}\n", game_string);
     stdin.write_all(newgame_command.as_bytes())?;
@@ -132,11 +144,11 @@ pub async fn run_commands(mut child: Child, game_string: &str, bestmove_args: &s
 
     // We're done with stdin, drop it explicitly to signal EOF to the child process
     drop(stdin);
-    
+
     // Read output
     let output = child.wait_with_output()?;
     let stdout = String::from_utf8(output.stdout)?;
-    
+
     Ok(parse_ai_output(&stdout)?)
 }
 
@@ -173,7 +185,10 @@ mod tests {
             Base;InProgress;White[3];wS1
             bG1 -wS1
         "#;
-        assert!(matches!(parse_ai_output(output), Err(ParseError::MissingOk(_))));
+        assert!(matches!(
+            parse_ai_output(output),
+            Err(ParseError::MissingOk(_))
+        ));
     }
 
     #[test]
@@ -186,7 +201,10 @@ mod tests {
             ok
             ok
         "#;
-        assert!(matches!(parse_ai_output(output), Err(ParseError::MissingBestMove(_))));
+        assert!(matches!(
+            parse_ai_output(output),
+            Err(ParseError::MissingBestMove(_))
+        ));
     }
 
     #[test]
@@ -199,6 +217,9 @@ mod tests {
             ok
             err UnrecognizedCommand("time 00:00:0E")
         "#;
-        assert!(matches!(parse_ai_output(output), Err(ParseError::BestMoveError(_))));
+        assert!(matches!(
+            parse_ai_output(output),
+            Err(ParseError::BestMoveError(_))
+        ));
     }
 }

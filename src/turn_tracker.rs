@@ -1,8 +1,8 @@
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use async_trait::async_trait;
 
 // pub const HASH_RETENTION_PERIOD: Duration = Duration::from_secs(3600);
 pub const HASH_RETENTION_PERIOD: Duration = Duration::from_secs(10);
@@ -45,13 +45,17 @@ impl TurnTracking for TurnTracker {
     }
 
     async fn processing(&self, hash: u64) {
-        self.processing_turns.lock().await
+        self.processing_turns
+            .lock()
+            .await
             .insert(hash, Instant::now());
     }
 
     async fn processed(&self, hash: u64) {
         self.processing_turns.lock().await.remove(&hash);
-        self.processed_turns.lock().await
+        self.processed_turns
+            .lock()
+            .await
             .insert(hash, Instant::now());
     }
 
