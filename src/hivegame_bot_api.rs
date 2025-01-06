@@ -1,5 +1,6 @@
 use reqwest::{Client, Error as ReqwestError};
 use std::time::Duration;
+use serde::{Deserialize, Serialize};
 
 const API_TIMEOUT: u64 = 10; // 10 seconds timeout for API calls
 
@@ -12,6 +13,17 @@ pub enum ApiError {
         status_code: reqwest::StatusCode,
         message: String,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HiveGame {
+    game_id: String,
+    time: String,
+    opponent_username: String,
+    game_type: String, // Base, Base+PLM
+    game_status: String, // InProgress, etc.
+    player_turn: String, // White[3]
+    moves: String // wS1;bG1 -wS1;wA1 wS1/;bG2 /bG 
 }
 
 pub struct HiveGameApi {
@@ -30,8 +42,8 @@ impl HiveGameApi {
     }
 
     /// Get all active games for a bot
-    /// Returns a vector of game strings
-    pub async fn get_games(&self, uri: &str, api_key: &str) -> Result<Vec<String>, ApiError> {
+    /// Returns a vector of HiveGame
+    pub async fn get_games(&self, uri: &str, api_key: &str) -> Result<Vec<HiveGame>, ApiError> {
         let url = format!("{}{}", self.base_url, uri);
 
         let response = self
@@ -57,10 +69,17 @@ impl HiveGameApi {
         &self,
         _uri: &str,
         _api_key: &str,
-    ) -> Result<Vec<String>, ApiError> {
-        let game_strings =
-            vec!["Base;InProgress;White[3];wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string()];
-        Ok(game_strings)
+    ) -> Result<Vec<HiveGame>, ApiError> {
+        let game = HiveGame {
+            game_id: "123".to_string(),
+            time: "20+10".to_string(),
+            opponent_username: "player1".to_string(),
+            game_type: "Base+PLM".to_string(),
+            game_status: "InProgress".to_string(),
+            player_turn: "White[3]".to_string(),
+            moves: "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string(),
+        };
+        Ok(vec![game])
     }
 
     /// Send a move to the game

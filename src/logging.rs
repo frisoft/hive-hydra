@@ -1,6 +1,6 @@
 use tracing::{info, Level};
 use tracing_subscriber::{
-    fmt::{self, time::LocalTime, time::UtcTime},
+    fmt::{self, time::UtcTime},
     layer::SubscriberExt,
     Registry,
 };

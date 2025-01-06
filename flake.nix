@@ -2,39 +2,33 @@
   description = "hivegame-uhp-api flake to setup everything";
 
   inputs = {
-    nixpkgs.url      = "github:NixOS/nixpkgs/nixos-unstable";
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
+  outputs = { self, nixpkgs, flake-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs {
-          inherit system overlays;
-        };
+        pkgs = nixpkgs.legacyPackages.${system};
+        hive-hydra = pkgs.callPackage ./default.nix { };
+        nokamute = pkgs.callPackage (pkgs.fetchFromGitHub {
+          owner = "frisoft";
+          repo = "nokamute";
+          rev = "master";
+          sha256 = "sha256-7Q2VuVexug0iqBXEzHfQ/c9q7TfjL56psGbq5sU2Nw4=";
+        }) {};
       in
       with pkgs;
       {
+        packages.default = hive-hydra;
+        
         devShells.default = mkShell rec {
           buildInputs = [
-            pkg-config
-            cacert
-            cargo-make
             cargo
-            mold
             rustfmt
-          ] ++ pkgs.lib.optionals pkg.stdenv.isDarwin [
-            darwin.apple_sdk.frameworks.SystemConfiguration
-          ];
-          shellHook = ''
-            echo "Welcome to hoevgame-uhp for hivegame.com"
-          '';
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
+            clippy
+            nokamute # use nokamute as AI during development
+          ] ++ hive-hydra.buildInputs;
         };
       }
     );
