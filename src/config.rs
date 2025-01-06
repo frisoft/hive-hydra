@@ -39,7 +39,7 @@ impl Config {
         // Process bot-specific environment variables
         let env_vars: HashMap<String, String> = std::env::vars().collect();
         for bot in &mut config.bots {
-            let prefix = format!("HIVE_HYDRA_BOT_{}_", bot.name.to_uppercase());
+            let prefix = format!("HIVE_HYDRA_BOT_{}_", bot.name.to_uppercase().replace('-', "_"));
 
             if let Some(value) = env_vars.get(&format!("{}API_KEY", prefix)) {
                 bot.api_key = value.clone();
@@ -98,5 +98,40 @@ bots:
         // Cleanup
         env::remove_var("HIVE_HYDRA_MAX_CONCURRENT_PROCESSES");
         env::remove_var("HIVE_HYDRA_BOT_TESTBOT1_API_KEY");
+    }
+
+    #[test]
+    fn test_env_var_with_hyphen_in_bot_name() {
+        // Clear existing env vars
+        env::remove_var("HIVE_HYDRA_BOT_TEST_BOT_API_KEY");
+
+        // Set test env var with underscore
+        env::set_var("HIVE_HYDRA_BOT_TEST_BOT_API_KEY", "test_key_1");
+
+        // Create test config file with hyphen in bot name
+        let config_content = r#"
+max_concurrent_processes: 5
+queue_capacity: 1000
+base_url: "https://hivegame.com"
+bots:
+  - name: test-bot
+    uri: /games/test-bot
+    ai_command: test_command
+    bestmove_command_args: depth 1
+    api_key: default_key1
+"#;
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("config.yaml");
+        fs::write(&file_path, config_content).unwrap();
+
+        // Load config and test
+        let config = Config::load_from(&file_path).unwrap();
+        assert_eq!(
+            config.bots[0].api_key, "test_key_1",
+            "bot api_key should be overridden by environment variable with underscore"
+        );
+
+        // Cleanup
+        env::remove_var("HIVE_HYDRA_BOT_TEST_BOT_API_KEY");
     }
 }
