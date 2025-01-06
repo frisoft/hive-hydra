@@ -1,6 +1,8 @@
 use reqwest::{Client, Error as ReqwestError};
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 const API_TIMEOUT: u64 = 10; // 10 seconds timeout for API calls
 
@@ -17,13 +19,29 @@ pub enum ApiError {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HiveGame {
-    game_id: String,
-    time: String,
-    opponent_username: String,
-    game_type: String, // Base, Base+PLM
-    game_status: String, // InProgress, etc.
-    player_turn: String, // White[3]
-    moves: String // wS1;bG1 -wS1;wA1 wS1/;bG2 /bG 
+    pub game_id: String,
+    pub time: String,
+    pub opponent_username: String,
+    pub game_type: String, // Base, Base+PLM
+    pub game_status: String, // InProgress, etc.
+    pub player_turn: String, // White[3]
+    pub moves: String // wS1;bG1 -wS1;wA1 wS1/;bG2 /bG 
+}
+
+pub trait GameHash {
+    fn calculate_hash(&self) -> u64;
+}
+
+impl GameHash for HiveGame {
+    fn calculate_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.game_id.hash(&mut hasher);
+        self.game_type.hash(&mut hasher);
+        self.game_status.hash(&mut hasher);
+        self.player_turn.hash(&mut hasher);
+        self.moves.hash(&mut hasher);
+        hasher.finish()
+    }
 }
 
 pub struct HiveGameApi {
@@ -122,11 +140,30 @@ mod tests {
         // Start a mock server
         let mock_server = MockServer::start().await;
 
-        // Create mock response
+        // Create mock response with multiple games
         Mock::given(method("GET"))
             .and(path("/games/bot1"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(vec!["Base;InProgress;White[3];wS1;bG1"]),
+                ResponseTemplate::new(200).set_body_json(vec![
+                    HiveGame {
+                        game_id: "123".to_string(),
+                        time: "20+10".to_string(),
+                        opponent_username: "player1".to_string(),
+                        game_type: "Base+PLM".to_string(),
+                        game_status: "InProgress".to_string(),
+                        player_turn: "White[3]".to_string(),
+                        moves: "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string(),
+                    },
+                    HiveGame {
+                        game_id: "456".to_string(),
+                        time: "10+5".to_string(),
+                        opponent_username: "player2".to_string(),
+                        game_type: "Base".to_string(),
+                        game_status: "InProgress".to_string(),
+                        player_turn: "Black[2]".to_string(),
+                        moves: "bS1;wG1 -bS1;bA1 bS1/;wG2 /wG1".to_string(),
+                    },
+                ]),
             )
             .mount(&mock_server)
             .await;
@@ -134,8 +171,22 @@ mod tests {
         let api = HiveGameApi::new(mock_server.uri());
         let games = api.get_games("/games/bot1", "test_key").await.unwrap();
 
-        assert_eq!(games.len(), 1);
-        assert!(games[0].contains("Base;InProgress"));
+        // Verify we got the expected number of games
+        assert_eq!(games.len(), 2);
+
+        // Verify first game
+        assert_eq!(games[0].game_id, "123");
+        assert_eq!(games[0].game_type, "Base+PLM");
+        assert_eq!(games[0].game_status, "InProgress");
+        assert_eq!(games[0].player_turn, "White[3]");
+        assert_eq!(games[0].moves, "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1");
+
+        // Verify second game
+        assert_eq!(games[1].game_id, "456");
+        assert_eq!(games[1].game_type, "Base");
+        assert_eq!(games[1].game_status, "InProgress");
+        assert_eq!(games[1].player_turn, "Black[2]");
+        assert_eq!(games[1].moves, "bS1;wG1 -bS1;bA1 bS1/;wG2 /wG1");
     }
 
     #[tokio::test]

@@ -7,7 +7,7 @@ mod turn_tracker;
 use turn_tracker::{TurnTracker, TurnTracking};
 mod ai;
 mod hivegame_bot_api;
-use hivegame_bot_api::HiveGameApi;
+use hivegame_bot_api::{HiveGameApi, GameHash};
 mod config;
 use config::{BotConfig, Config};
 mod cli;
@@ -86,13 +86,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
-fn calculate_hash(game_string: &str) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    game_string.hash(&mut hasher);
-    hasher.finish()
-}
 
 async fn producer_task(
     sender: mpsc::Sender<GameTurn>,
@@ -107,8 +100,8 @@ async fn producer_task(
         match api.fake_get_games(&bot.uri, &bot.api_key).await {
             Ok(game_strings) => {
                 debug!("Retrieved {} games for bot {}", game_strings.len(), bot.name);
-                for game_string in game_strings {
-                    let hash = calculate_hash(&game_string);
+                for game in game_strings {
+                    let hash = game.calculate_hash();
 
                     if turn_tracker.tracked(hash).await {
                         debug!("Game {} already tracked for bot {}", hash, bot.name);
@@ -116,7 +109,12 @@ async fn producer_task(
                     }
 
                     let turn = GameTurn {
-                        game_string,
+                        game_string: format!("{};{};{};{};{}", 
+                            game.game_id,
+                            game.game_type,
+                            game.game_status,
+                            game.player_turn,
+                            game.moves),
                         hash,
                         bot: bot.clone(),
                     };
