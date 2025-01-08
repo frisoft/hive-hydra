@@ -16,6 +16,7 @@ pub trait TurnTracking {
     async fn cleanup(&self);
 }
 
+#[derive(Clone)]
 pub struct TurnTracker {
     processing_turns: Arc<Mutex<HashMap<u64, Instant>>>,
     processed_turns: Arc<Mutex<HashMap<u64, Instant>>>,
@@ -26,13 +27,6 @@ impl TurnTracker {
         TurnTracker {
             processing_turns: Arc::new(Mutex::new(HashMap::new())),
             processed_turns: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
-    pub fn clone(&self) -> Self {
-        TurnTracker {
-            processing_turns: self.processing_turns.clone(),
-            processed_turns: self.processed_turns.clone(),
         }
     }
 }

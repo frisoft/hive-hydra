@@ -28,12 +28,8 @@ pub struct HiveGame {
     pub moves: String // wS1;bG1 -wS1;wA1 wS1/;bG2 /bG 
 }
 
-pub trait GameHash {
-    fn calculate_hash(&self) -> u64;
-}
-
-impl GameHash for HiveGame {
-    fn calculate_hash(&self) -> u64 {
+impl HiveGame {
+    pub fn hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.game_id.hash(&mut hasher);
         self.game_type.hash(&mut hasher);
@@ -41,6 +37,16 @@ impl GameHash for HiveGame {
         self.player_turn.hash(&mut hasher);
         self.moves.hash(&mut hasher);
         hasher.finish()
+    }
+
+    pub fn game_string(&self) -> String {
+        format!(
+            "{};{};{};{}",
+            self.game_type,
+            self.game_status,
+            self.player_turn,
+            self.moves
+        )
     }
 }
 
@@ -132,8 +138,17 @@ impl HiveGameApi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::Request;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn verify_auth_header(req: &Request, expected_key: &str) {
+        let auth_header = req.headers.get(&"Authorization".parse().unwrap())
+            .expect("Authorization header missing");
+        
+        let expected_value = format!("Bearer {}", expected_key);
+        assert_eq!(auth_header[0], expected_value);
+    }
 
     #[tokio::test]
     async fn test_get_games() {
@@ -143,6 +158,10 @@ mod tests {
         // Create mock response with multiple games
         Mock::given(method("GET"))
             .and(path("/games/bot1"))
+            .and(|req: &Request| {
+                verify_auth_header(req, "test_key");
+                true
+            })
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(vec![
                     HiveGame {
@@ -197,6 +216,10 @@ mod tests {
         // Create mock response
         Mock::given(method("POST"))
             .and(path("/games/123/move"))
+            .and(|req: &Request| {
+                verify_auth_header(req, "test_key");
+                true
+            })
             .respond_with(ResponseTemplate::new(200))
             .mount(&mock_server)
             .await;
@@ -213,6 +236,10 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/games/error"))
+            .and(|req: &Request| {
+                verify_auth_header(req, "test_key");
+                true
+            })
             .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
             .mount(&mock_server)
             .await;
@@ -226,5 +253,21 @@ mod tests {
                 message
             }) if status_code == 404 && message == "Not found"
         ));
+    }
+
+    #[test]
+    fn test_game_string() {
+        let game = HiveGame {
+            game_id: "123".to_string(),
+            time: "20+10".to_string(),
+            opponent_username: "player1".to_string(),
+            game_type: "Base".to_string(),
+            game_status: "InProgress".to_string(),
+            player_turn: "White[3]".to_string(),
+            moves: "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string(),
+        };
+
+        let expected = "Base;InProgress;White[3];wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1";
+        assert_eq!(game.game_string(), expected);
     }
 }

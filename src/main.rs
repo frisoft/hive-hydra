@@ -2,19 +2,20 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tracing::{info, warn, error, debug};
+use hivegame_bot_api::HiveGame;
 
 mod turn_tracker;
 use turn_tracker::{TurnTracker, TurnTracking};
 mod ai;
 mod hivegame_bot_api;
-use hivegame_bot_api::{HiveGameApi, GameHash};
+use hivegame_bot_api::HiveGameApi;
 mod config;
 use config::{BotConfig, Config};
 mod cli;
 mod logging;
 
-struct GameTurn {
-    game_string: String,
+struct BotGameTurn {
+    game: HiveGame,
     hash: u64,
     bot: BotConfig,
 }
@@ -88,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 
 async fn producer_task(
-    sender: mpsc::Sender<GameTurn>,
+    sender: mpsc::Sender<BotGameTurn>,
     turn_tracker: TurnTracker,
     base_url: String,
     bot: BotConfig,
@@ -101,20 +102,15 @@ async fn producer_task(
             Ok(game_strings) => {
                 debug!("Retrieved {} games for bot {}", game_strings.len(), bot.name);
                 for game in game_strings {
-                    let hash = game.calculate_hash();
+                    let hash = game.hash();
 
                     if turn_tracker.tracked(hash).await {
                         debug!("Game {} already tracked for bot {}", hash, bot.name);
                         continue;
                     }
 
-                    let turn = GameTurn {
-                        game_string: format!("{};{};{};{};{}", 
-                            game.game_id,
-                            game.game_type,
-                            game.game_status,
-                            game.player_turn,
-                            game.moves),
+                    let turn = BotGameTurn {
+                        game,
                         hash,
                         bot: bot.clone(),
                     };
@@ -137,7 +133,7 @@ async fn producer_task(
 }
 
 async fn consumer_task(
-    receiver: Arc<Mutex<mpsc::Receiver<GameTurn>>>,
+    receiver: Arc<Mutex<mpsc::Receiver<BotGameTurn>>>,
     semaphore: Arc<Semaphore>,
     active_processes: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     turn_tracker: TurnTracker,
@@ -162,7 +158,7 @@ async fn consumer_task(
     }
 }
 
-async fn process_turn(turn: GameTurn, semaphore: Arc<Semaphore>, turn_tracker: TurnTracker) {
+async fn process_turn(turn: BotGameTurn, semaphore: Arc<Semaphore>, turn_tracker: TurnTracker) {
     let _permit = match semaphore.acquire().await {
         Ok(permit) => permit,
         Err(e) => {
@@ -183,7 +179,10 @@ async fn process_turn(turn: GameTurn, semaphore: Arc<Semaphore>, turn_tracker: T
         }
     };
 
-    match ai::run_commands(child, &turn.game_string, &turn.bot.bestmove_command_args).await {
+    // Convert game to string using the HiveGame method
+    let game_string = turn.game.game_string();
+
+    match ai::run_commands(child, &game_string, &turn.bot.bestmove_command_args).await {
         Ok(bestmove) => {
             info!("Bot '{}' bestmove: '{}'", turn.bot.name, bestmove);
             // Here you can handle the bestmove (e.g., send it to the server)
