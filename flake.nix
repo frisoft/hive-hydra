@@ -27,6 +27,7 @@
             cargo
             rustfmt
             clippy
+            rust-analyzer
             nokamute # use nokamute as AI during development
           ] ++ hive-hydra.buildInputs;
         };

@@ -29,7 +29,6 @@ pub struct HiveGame {
 }
 
 impl HiveGame {
-    // Explain this function with a comment here. AI!
     pub fn hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.game_id.hash(&mut hasher);
