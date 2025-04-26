@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use tracing::{info};
 
 const API_TIMEOUT: u64 = 10; // 10 seconds timeout for API calls
 
@@ -107,12 +108,17 @@ impl HiveGame {
     }
 
     pub fn game_string(&self) -> String {
+        // Trim any trailing semicolons and spaces from the moves string
+        let cleaned_moves = self.moves.trim_end_matches(|c| c == ';' || c == ' ');
+        
+        // info!("------- Original Moves: [{}], Cleaned: [{}]", self.moves, cleaned_moves);
+        
         format!(
             "{};{};{};{}",
             self.game_type,
             self.game_status,
             self.player_turn,
-            self.moves
+            cleaned_moves
         )
     }
 }
