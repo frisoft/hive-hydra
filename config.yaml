@@ -5,14 +5,16 @@ base_url: "https://hivegame.com"  # Base URL for the Hive Game API
 
 # Bot configurations
 bots:
-  - name: nokamute1  # This name is used in env vars like HIVE_HYDRA_BOT_NOKAMUTE1_API_KEY
+  - name: nokamute1  # This name is used in env vars like HIVE_HYDRA_BOT_NOKAMUTE1_EMAIL
     uri: /games/nokamute1
     ai_command: nokamute uhp --threads=1
     bestmove_command_args: depth 1
-    api_key: default_key1  # Better to set this via environment variable
+    email: bot1@example.com  # Better to set this via environment variable
+    password: password1      # Better to set this via environment variable
 
   - name: nokamute2
     uri: /games/nokamute2
     ai_command: nokamute uhp
     bestmove_command_args: "time 00:00:01"
-    api_key: default_key2  # Better to set this via environment variable
+    email: bot2@example.com  # Better to set this via environment variable
+    password: password2      # Better to set this via environment variable
