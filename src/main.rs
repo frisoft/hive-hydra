@@ -225,11 +225,17 @@ async fn process_turn(turn: BotGameTurn, semaphore: Arc<Semaphore>, turn_tracker
         Ok(bestmove) => {
             info!("Bot '{}' bestmove: '{}'", turn.bot.name, bestmove);
             
+            // Determine the game identifier to use (prefer nanoid, fall back to game_id)
+            let game_identifier = match &turn.game.nanoid {
+                Some(id) => id.clone(),
+                None => turn.game.game_id.clone()
+            };
+            
             // Send the move to the server using the token
             let api = HiveGameApi::new(turn.bot.uri.clone());
-            match api.play_move(&turn.game.game_id, &bestmove, &turn.token).await {
+            match api.play_move(&game_identifier, &bestmove, &turn.token).await {
                 Ok(_) => {
-                    info!("Move '{}' sent successfully for game {}", bestmove, turn.game.game_id);
+                    info!("Move '{}' sent successfully for game {}", bestmove, game_identifier);
                 }
                 Err(e) => {
                     error!("Failed to send move for bot {}: {}", turn.bot.name, e);

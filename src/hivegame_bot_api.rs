@@ -1,7 +1,7 @@
 use reqwest::{Client, Error as ReqwestError};
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
-use serde_json::Error as JsonError;
+use serde_json::{Error as JsonError, json};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use tracing::{info};
@@ -235,13 +235,26 @@ impl HiveGameApi {
         move_notation: &str,
         token: &str,
     ) -> Result<(), ApiError> {
-        let url = format!("{}/games/{}/move", self.base_url, game_id);
+        let url = format!("{}/api/v1/bot/games/play", self.base_url);
+        
+        // Create a payload that includes both the game_id and the piece_pos (move notation)
+        let payload = json!({
+            "game_id": game_id,
+            "piece_pos": move_notation
+        });
+        
+        // Log the payload for debugging
+        info!("-------- payload: {}", serde_json::to_string(&payload).unwrap_or_default());
+
+        // Pre-serialize the payload to ensure proper JSON escaping
+        let serialized_payload = serde_json::to_string(&payload)?;
 
         let response = self
             .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", token))
-            .json(&move_notation)
+            .header("Content-Type", "application/json")
+            .body(serialized_payload)
             .send()
             .await?;
 
@@ -464,7 +477,7 @@ mod tests {
 
         // Create mock response
         Mock::given(method("POST"))
-            .and(path("/games/123/move"))
+            .and(path("/api/v1/bot/games/play"))
             .and(|req: &Request| {
                 verify_auth_header(req, "test_key");
                 true
