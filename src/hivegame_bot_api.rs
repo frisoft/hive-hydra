@@ -1,6 +1,7 @@
 use reqwest::{Client, Error as ReqwestError};
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use serde_json::Error as JsonError;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -15,6 +16,8 @@ pub enum ApiError {
         status_code: reqwest::StatusCode,
         message: String,
     },
+    #[error("JSON error: {0}")]
+    JsonError(#[from] JsonError),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,8 +38,14 @@ pub struct AuthRequest {
 }
 
 #[derive(Debug, Deserialize)]
+struct AuthResponseData {
+    token: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AuthResponse {
-    pub token: String,
+    data: AuthResponseData,
+    success: bool,
 }
 
 impl HiveGame {
@@ -84,6 +93,9 @@ impl HiveGameApi {
             email: email.to_string(),
             password: password.to_string(),
         };
+        
+        // Print the request body for debugging
+        println!("Request body: {}", serde_json::to_string_pretty(&auth_request).unwrap());
 
         let response = self
             .client
@@ -101,8 +113,12 @@ impl HiveGameApi {
             });
         }
 
-        let auth_response: AuthResponse = response.json().await?;
-        Ok(auth_response.token)
+        let response_text = response.text().await?;
+        // println!("Response body: {}", response_text);
+        
+        // Parse the response JSON from the saved text
+        let auth_response: AuthResponse = serde_json::from_str(&response_text)?;
+        Ok(auth_response.data.token)
     }
 
     /// Get all active games for a bot
@@ -205,7 +221,10 @@ mod tests {
             })))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(json!({
-                    "token": "test_token_123"
+                    "data": {
+                        "token": "test_token_123"
+                    },
+                    "success": true
                 }))
             )
             .mount(&mock_server)
