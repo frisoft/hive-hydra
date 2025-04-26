@@ -111,6 +111,18 @@ async fn producer_task(
     };
 
     loop {
+        // Get challenges for this bot
+        match api.challenges(&token).await {
+            Ok(challenge_ids) => {
+                if !challenge_ids.is_empty() {
+                    info!("Bot {} has {} pending challenges: {:?}", bot.name, challenge_ids.len(), challenge_ids);
+                } else {
+                    debug!("No challenges found for bot {}", bot.name);
+                }
+            },
+            Err(e) => error!("Failed to fetch challenges for bot {}: {}", bot.name, e),
+        }
+
         match api.fake_get_games(&bot.uri, &token).await {
             Ok(game_strings) => {
                 debug!("Retrieved {} games for bot {}", game_strings.len(), bot.name);

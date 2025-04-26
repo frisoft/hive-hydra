@@ -48,6 +48,24 @@ pub struct AuthResponse {
     success: bool,
 }
 
+#[derive(Debug, Deserialize)]
+struct Challenge {
+    challenge_id: String,
+    // We're omitting other fields as we only need the challenge_id
+}
+
+#[derive(Debug, Deserialize)]
+struct ChallengesData {
+    bot: String,
+    challenges: Vec<Challenge>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChallengesResponse {
+    data: ChallengesData,
+    success: bool,
+}
+
 impl HiveGame {
     pub fn hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
@@ -106,7 +124,7 @@ impl HiveGameApi {
             .await?;
 
         let status = response.status();
-        if !status.is_success() {
+        if (!status.is_success()) {
             return Err(ApiError::ApiError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
@@ -188,6 +206,41 @@ impl HiveGameApi {
         }
 
         Ok(())
+    }
+
+    /// Get all challenges for a bot
+    /// Returns a vector of challenge IDs
+    pub async fn challenges(&self, token: &str) -> Result<Vec<String>, ApiError> {
+        let url = format!("{}/api/v1/bot/challenges/", self.base_url);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(ApiError::ApiError {
+                status_code: status,
+                message: response.text().await.unwrap_or_default(),
+            });
+        }
+
+        // Deserialize the response into our ChallengesResponse struct
+        let response_json: ChallengesResponse = response.json().await?;
+        
+        // Extract challenge IDs into a vector
+        let challenge_ids = response_json.data.challenges
+            .iter()
+            .map(|challenge| challenge.challenge_id.clone())
+            .collect();
+        
+        // Print the challenges for debugging
+        println!("Challenges received: {:?}", challenge_ids);
+        
+        Ok(challenge_ids)
     }
 }
 
@@ -384,5 +437,76 @@ mod tests {
 
         let expected = "Base;InProgress;White[3];wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1";
         assert_eq!(game.game_string(), expected);
+    }
+
+    #[tokio::test]
+    async fn test_challenges() {
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Create mock response for challenges endpoint with proper structure
+        Mock::given(method("GET"))
+            .and(path("/api/v1/bot/challenges/"))
+            .and(|req: &Request| {
+                verify_auth_header(req, "test_key");
+                true
+            })
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "data": {
+                        "bot": "bot1@example.com",
+                        "challenges": [
+                            {
+                                "challenge_id": "qaTq1dsIi3-i",
+                                "game_type": "Base+MLP"
+                            },
+                            {
+                                "challenge_id": "abCdEfGhIj-z",
+                                "game_type": "Base"
+                            }
+                        ]
+                    },
+                    "success": true
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+
+        let api = HiveGameApi::new(mock_server.uri());
+        let challenge_ids = api.challenges("test_key").await.unwrap();
+
+        // Verify we got the expected number of challenges
+        assert_eq!(challenge_ids.len(), 2);
+        assert_eq!(challenge_ids[0], "qaTq1dsIi3-i");
+        assert_eq!(challenge_ids[1], "abCdEfGhIj-z");
+    }
+
+    #[tokio::test]
+    async fn test_challenges_error() {
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Create mock response for failed challenges request
+        Mock::given(method("GET"))
+            .and(path("/api/v1/bot/challenges/"))
+            .and(|req: &Request| {
+                verify_auth_header(req, "invalid_key");
+                true
+            })
+            .respond_with(
+                ResponseTemplate::new(401).set_body_string("Unauthorized")
+            )
+            .mount(&mock_server)
+            .await;
+
+        let api = HiveGameApi::new(mock_server.uri());
+        let result = api.challenges("invalid_key").await;
+
+        assert!(matches!(result,
+            Err(ApiError::ApiError {
+                status_code,
+                message
+            }) if status_code == 401 && message == "Unauthorized"
+        ));
     }
 }
