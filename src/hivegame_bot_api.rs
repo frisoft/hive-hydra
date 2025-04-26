@@ -28,6 +28,17 @@ pub struct HiveGame {
     pub moves: String // wS1;bG1 -wS1;wA1 wS1/;bG2 /bG 
 }
 
+#[derive(Debug, Serialize)]
+pub struct AuthRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuthResponse {
+    pub token: String,
+}
+
 impl HiveGame {
     pub fn hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
@@ -65,15 +76,44 @@ impl HiveGameApi {
         Self { client, base_url }
     }
 
+    /// Authenticate with email and password to get a token
+    pub async fn auth(&self, email: &str, password: &str) -> Result<String, ApiError> {
+        let url = format!("{}/api/v1/auth/token", self.base_url);
+        
+        let auth_request = AuthRequest {
+            email: email.to_string(),
+            password: password.to_string(),
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&auth_request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(ApiError::ApiError {
+                status_code: status,
+                message: response.text().await.unwrap_or_default(),
+            });
+        }
+
+        let auth_response: AuthResponse = response.json().await?;
+        Ok(auth_response.token)
+    }
+
     /// Get all active games for a bot
     /// Returns a vector of HiveGame
-    pub async fn get_games(&self, uri: &str, api_key: &str) -> Result<Vec<HiveGame>, ApiError> {
+    pub async fn get_games(&self, uri: &str, token: &str) -> Result<Vec<HiveGame>, ApiError> {
         let url = format!("{}{}", self.base_url, uri);
 
         let response = self
             .client
             .get(&url)
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Authorization", format!("Bearer {}", token))
             .send()
             .await?;
 
@@ -92,7 +132,7 @@ impl HiveGameApi {
     pub async fn fake_get_games(
         &self,
         _uri: &str,
-        _api_key: &str,
+        _token: &str,
     ) -> Result<Vec<HiveGame>, ApiError> {
         let game = HiveGame {
             game_id: "123".to_string(),
@@ -111,14 +151,14 @@ impl HiveGameApi {
         &self,
         game_id: &str,
         move_notation: &str,
-        api_key: &str,
+        token: &str,
     ) -> Result<(), ApiError> {
         let url = format!("{}/games/{}/move", self.base_url, game_id);
 
         let response = self
             .client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Authorization", format!("Bearer {}", token))
             .json(&move_notation)
             .send()
             .await?;
@@ -139,8 +179,9 @@ impl HiveGameApi {
 mod tests {
     use super::*;
     use wiremock::Request;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{method, path, body_json};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+    use serde_json::json;
 
     fn verify_auth_header(req: &Request, expected_key: &str) {
         let auth_header = req.headers.get(&"Authorization".parse().unwrap())
@@ -148,6 +189,61 @@ mod tests {
         
         let expected_value = format!("Bearer {}", expected_key);
         assert_eq!(auth_header[0], expected_value);
+    }
+
+    #[tokio::test]
+    async fn test_auth() {
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Create mock response for auth
+        Mock::given(method("POST"))
+            .and(path("/api/v1/auth/token"))
+            .and(body_json(json!({
+                "email": "bot@example.com",
+                "password": "hivegame"
+            })))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "token": "test_token_123"
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+
+        let api = HiveGameApi::new(mock_server.uri());
+        let token = api.auth("bot@example.com", "hivegame").await.unwrap();
+
+        assert_eq!(token, "test_token_123");
+    }
+
+    #[tokio::test]
+    async fn test_auth_failure() {
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Create mock response for failed auth
+        Mock::given(method("POST"))
+            .and(path("/api/v1/auth/token"))
+            .and(body_json(json!({
+                "email": "wrong@example.com",
+                "password": "wrong_password"
+            })))
+            .respond_with(
+                ResponseTemplate::new(401).set_body_string("Unauthorized")
+            )
+            .mount(&mock_server)
+            .await;
+
+        let api = HiveGameApi::new(mock_server.uri());
+        let result = api.auth("wrong@example.com", "wrong_password").await;
+
+        assert!(matches!(result,
+            Err(ApiError::ApiError {
+                status_code,
+                message
+            }) if status_code == 401 && message == "Unauthorized"
+        ));
     }
 
     #[tokio::test]

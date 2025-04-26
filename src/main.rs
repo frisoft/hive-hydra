@@ -18,6 +18,7 @@ struct BotGameTurn {
     game: HiveGame,
     hash: u64,
     bot: BotConfig,
+    token: String,
 }
 
 #[tokio::main]
@@ -97,8 +98,20 @@ async fn producer_task(
     let api = HiveGameApi::new(base_url);
     info!("Producer task started for bot: {}", bot.name);
 
+    // Authenticate to get token
+    let token = match api.auth(&bot.email, &bot.password).await {
+        Ok(token) => {
+            info!("Authentication successful for bot: {}", bot.name);
+            token
+        },
+        Err(e) => {
+            error!("Authentication failed for bot {}: {}", bot.name, e);
+            return Err(Box::new(e));
+        }
+    };
+
     loop {
-        match api.fake_get_games(&bot.uri, &bot.api_key).await {
+        match api.fake_get_games(&bot.uri, &token).await {
             Ok(game_strings) => {
                 debug!("Retrieved {} games for bot {}", game_strings.len(), bot.name);
                 for game in game_strings {
@@ -113,6 +126,7 @@ async fn producer_task(
                         game,
                         hash,
                         bot: bot.clone(),
+                        token: token.clone(),
                     };
 
                     turn_tracker.processing(hash).await;
@@ -185,7 +199,17 @@ async fn process_turn(turn: BotGameTurn, semaphore: Arc<Semaphore>, turn_tracker
     match ai::run_commands(child, &game_string, &turn.bot.bestmove_command_args).await {
         Ok(bestmove) => {
             info!("Bot '{}' bestmove: '{}'", turn.bot.name, bestmove);
-            // Here you can handle the bestmove (e.g., send it to the server)
+            
+            // Send the move to the server using the token
+            let api = HiveGameApi::new(turn.bot.uri.clone());
+            match api.play_move(&turn.game.game_id, &bestmove, &turn.token).await {
+                Ok(_) => {
+                    info!("Move '{}' sent successfully for game {}", bestmove, turn.game.game_id);
+                }
+                Err(e) => {
+                    error!("Failed to send move for bot {}: {}", turn.bot.name, e);
+                }
+            }
         }
         Err(e) => {
             error!("Error running AI commands for bot '{}': '{}'", turn.bot.name, e);

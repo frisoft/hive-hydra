@@ -18,6 +18,8 @@ pub struct BotConfig {
     pub ai_command: String,
     pub bestmove_command_args: String,
     pub api_key: String,
+    pub email: String,
+    pub password: String,
 }
 
 impl Config {
@@ -44,6 +46,12 @@ impl Config {
             if let Some(value) = env_vars.get(&format!("{}API_KEY", prefix)) {
                 bot.api_key = value.clone();
             }
+            if let Some(value) = env_vars.get(&format!("{}EMAIL", prefix)) {
+                bot.email = value.clone();
+            }
+            if let Some(value) = env_vars.get(&format!("{}PASSWORD", prefix)) {
+                bot.password = value.clone();
+            }
         }
 
         Ok(config)
@@ -63,10 +71,14 @@ mod tests {
         // Clear existing env vars
         env::remove_var("HIVE_HYDRA_MAX_CONCURRENT_PROCESSES");
         env::remove_var("HIVE_HYDRA_BOT_TESTBOT1_API_KEY");
+        env::remove_var("HIVE_HYDRA_BOT_TESTBOT1_EMAIL");
+        env::remove_var("HIVE_HYDRA_BOT_TESTBOT1_PASSWORD");
 
         // Set test env vars
         env::set_var("HIVE_HYDRA_MAX_CONCURRENT_PROCESSES", "10");
         env::set_var("HIVE_HYDRA_BOT_TESTBOT1_API_KEY", "test_key_1");
+        env::set_var("HIVE_HYDRA_BOT_TESTBOT1_EMAIL", "test_email_1");
+        env::set_var("HIVE_HYDRA_BOT_TESTBOT1_PASSWORD", "test_password_1");
 
         // Create test config file
         let config_content = r#"
@@ -79,6 +91,8 @@ bots:
     ai_command: test_command
     bestmove_command_args: depth 1
     api_key: default_key1
+    email: default_email1
+    password: default_password1
 "#;
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("config.yaml");
@@ -94,19 +108,33 @@ bots:
             config.bots[0].api_key, "test_key_1",
             "bot api_key should be overridden by environment variable"
         );
+        assert_eq!(
+            config.bots[0].email, "test_email_1",
+            "bot email should be overridden by environment variable"
+        );
+        assert_eq!(
+            config.bots[0].password, "test_password_1",
+            "bot password should be overridden by environment variable"
+        );
 
         // Cleanup
         env::remove_var("HIVE_HYDRA_MAX_CONCURRENT_PROCESSES");
         env::remove_var("HIVE_HYDRA_BOT_TESTBOT1_API_KEY");
+        env::remove_var("HIVE_HYDRA_BOT_TESTBOT1_EMAIL");
+        env::remove_var("HIVE_HYDRA_BOT_TESTBOT1_PASSWORD");
     }
 
     #[test]
     fn test_env_var_with_hyphen_in_bot_name() {
         // Clear existing env vars
         env::remove_var("HIVE_HYDRA_BOT_TEST_BOT_API_KEY");
+        env::remove_var("HIVE_HYDRA_BOT_TEST_BOT_EMAIL");
+        env::remove_var("HIVE_HYDRA_BOT_TEST_BOT_PASSWORD");
 
         // Set test env var with underscore
         env::set_var("HIVE_HYDRA_BOT_TEST_BOT_API_KEY", "test_key_1");
+        env::set_var("HIVE_HYDRA_BOT_TEST_BOT_EMAIL", "test_email_1");
+        env::set_var("HIVE_HYDRA_BOT_TEST_BOT_PASSWORD", "test_password_1");
 
         // Create test config file with hyphen in bot name
         let config_content = r#"
@@ -119,6 +147,8 @@ bots:
     ai_command: test_command
     bestmove_command_args: depth 1
     api_key: default_key1
+    email: default_email1
+    password: default_password1
 "#;
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("config.yaml");
@@ -130,8 +160,18 @@ bots:
             config.bots[0].api_key, "test_key_1",
             "bot api_key should be overridden by environment variable with underscore"
         );
+        assert_eq!(
+            config.bots[0].email, "test_email_1",
+            "bot email should be overridden by environment variable with underscore"
+        );
+        assert_eq!(
+            config.bots[0].password, "test_password_1",
+            "bot password should be overridden by environment variable with underscore"
+        );
 
         // Cleanup
         env::remove_var("HIVE_HYDRA_BOT_TEST_BOT_API_KEY");
+        env::remove_var("HIVE_HYDRA_BOT_TEST_BOT_EMAIL");
+        env::remove_var("HIVE_HYDRA_BOT_TEST_BOT_PASSWORD");
     }
 }
