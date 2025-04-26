@@ -22,13 +22,30 @@ pub enum ApiError {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HiveGame {
+    #[serde(rename = "id")]
     pub game_id: String,
-    pub time: String,
+    #[serde(rename = "time_base")]
+    pub time: i32,  // Changed from String to i32 to match API response
+    #[serde(default)]
     pub opponent_username: String,
-    pub game_type: String, // Base, Base+PLM
-    pub game_status: String, // InProgress, etc.
-    pub player_turn: String, // White[3]
-    pub moves: String // wS1;bG1 -wS1;wA1 wS1/;bG2 /bG 
+    pub game_type: String,
+    pub game_status: String,
+    #[serde(default)]
+    pub player_turn: String,
+    #[serde(rename = "history", default)]
+    pub moves: String,
+    // Additional fields from API response - we can ignore most of these
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nanoid: Option<String>,
+    #[serde(default)]
+    pub black_id: String,
+    #[serde(default)]
+    pub white_id: String,
+    #[serde(default)]
+    pub current_player_id: String,
+    #[serde(default, skip_serializing)]
+    pub finished: bool,
+    // Add more fields as needed
 }
 
 #[derive(Debug, Serialize)]
@@ -63,6 +80,18 @@ struct ChallengesData {
 #[derive(Debug, Deserialize)]
 struct ChallengesResponse {
     data: ChallengesData,
+    success: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct GamesData {
+    bot: String,
+    games: Vec<HiveGame>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GamesResponse {
+    data: GamesData,
     success: bool,
 }
 
@@ -141,8 +170,8 @@ impl HiveGameApi {
 
     /// Get all active games for a bot
     /// Returns a vector of HiveGame
-    pub async fn get_games(&self, uri: &str, token: &str) -> Result<Vec<HiveGame>, ApiError> {
-        let url = format!("{}{}", self.base_url, uri);
+    pub async fn get_games(&self, token: &str) -> Result<Vec<HiveGame>, ApiError> {
+        let url = format!("{}/api/v1/bot/games/pending", self.base_url);
 
         let response = self
             .client
@@ -159,7 +188,15 @@ impl HiveGameApi {
             });
         }
 
-        response.json().await.map_err(|e| ApiError::RequestError(e))
+        // Get response as text and print it
+        let response_text = response.text().await?;
+        println!("Pending games response: {}", response_text);
+        
+        // Parse the response JSON using the nested structure
+        let games_response: GamesResponse = serde_json::from_str(&response_text)?;
+        
+        // Extract just the games array from the nested structure
+        Ok(games_response.data.games)
     }
 
     /// Function to use for manual testing without real connection
@@ -170,12 +207,17 @@ impl HiveGameApi {
     ) -> Result<Vec<HiveGame>, ApiError> {
         let game = HiveGame {
             game_id: "123".to_string(),
-            time: "20+10".to_string(),
+            time: 20,
             opponent_username: "player1".to_string(),
             game_type: "Base+PLM".to_string(),
             game_status: "InProgress".to_string(),
             player_turn: "White[3]".to_string(),
             moves: "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string(),
+            nanoid: None,
+            black_id: "".to_string(),
+            white_id: "".to_string(),
+            current_player_id: "".to_string(),
+            finished: false,
         };
         Ok(vec![game])
     }
@@ -352,38 +394,44 @@ mod tests {
 
         // Create mock response with multiple games
         Mock::given(method("GET"))
-            .and(path("/games/bot1"))
+            .and(path("/api/v1/bot/games/pending"))
             .and(|req: &Request| {
                 verify_auth_header(req, "test_key");
                 true
             })
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(vec![
-                    HiveGame {
-                        game_id: "123".to_string(),
-                        time: "20+10".to_string(),
-                        opponent_username: "player1".to_string(),
-                        game_type: "Base+PLM".to_string(),
-                        game_status: "InProgress".to_string(),
-                        player_turn: "White[3]".to_string(),
-                        moves: "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string(),
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "data": {
+                        "bot": "bot1@example.com",
+                        "games": [
+                            {
+                                "id": "123",
+                                "time_base": 20,
+                                "opponent_username": "player1",
+                                "game_type": "Base+PLM",
+                                "game_status": "InProgress",
+                                "player_turn": "White[3]",
+                                "history": "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1"
+                            },
+                            {
+                                "id": "456",
+                                "time_base": 10,
+                                "opponent_username": "player2",
+                                "game_type": "Base",
+                                "game_status": "InProgress",
+                                "player_turn": "Black[2]",
+                                "history": "bS1;wG1 -bS1;bA1 bS1/;wG2 /wG1"
+                            }
+                        ]
                     },
-                    HiveGame {
-                        game_id: "456".to_string(),
-                        time: "10+5".to_string(),
-                        opponent_username: "player2".to_string(),
-                        game_type: "Base".to_string(),
-                        game_status: "InProgress".to_string(),
-                        player_turn: "Black[2]".to_string(),
-                        moves: "bS1;wG1 -bS1;bA1 bS1/;wG2 /wG1".to_string(),
-                    },
-                ]),
+                    "success": true
+                }))
             )
             .mount(&mock_server)
             .await;
 
         let api = HiveGameApi::new(mock_server.uri());
-        let games = api.get_games("/games/bot1", "test_key").await.unwrap();
+        let games = api.get_games("test_key").await.unwrap();
 
         // Verify we got the expected number of games
         assert_eq!(games.len(), 2);
@@ -430,7 +478,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/games/error"))
+            .and(path("/api/v1/bot/games/pending"))
             .and(|req: &Request| {
                 verify_auth_header(req, "test_key");
                 true
@@ -440,7 +488,7 @@ mod tests {
             .await;
 
         let api = HiveGameApi::new(mock_server.uri());
-        let result = api.get_games("/games/error", "test_key").await;
+        let result = api.get_games("test_key").await;
 
         assert!(matches!(result,
             Err(ApiError::ApiError {
@@ -454,12 +502,17 @@ mod tests {
     fn test_game_string() {
         let game = HiveGame {
             game_id: "123".to_string(),
-            time: "20+10".to_string(),
+            time: 20,
             opponent_username: "player1".to_string(),
             game_type: "Base".to_string(),
             game_status: "InProgress".to_string(),
             player_turn: "White[3]".to_string(),
             moves: "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string(),
+            nanoid: None,
+            black_id: "".to_string(),
+            white_id: "".to_string(),
+            current_player_id: "".to_string(),
+            finished: false,
         };
 
         let expected = "Base;InProgress;White[3];wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1";
