@@ -242,6 +242,33 @@ impl HiveGameApi {
         
         Ok(challenge_ids)
     }
+
+    /// Accept a challenge for a bot
+    /// Takes a challenge ID and sends a request to accept it
+    pub async fn accept_challenge(&self, challenge_id: &str, token: &str) -> Result<(), ApiError> {
+        let url = format!("{}/api/v1/bot/challenge/accept/{}", self.base_url, challenge_id);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(ApiError::ApiError {
+                status_code: status,
+                message: response.text().await.unwrap_or_default(),
+            });
+        }
+
+        // Print response for debugging
+        let response_text = response.text().await?;
+        println!("Challenge acceptance response for {}: {}", challenge_id, response_text);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -507,6 +534,65 @@ mod tests {
                 status_code,
                 message
             }) if status_code == 401 && message == "Unauthorized"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_accept_challenge() {
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Create mock response for accept challenge endpoint
+        Mock::given(method("GET"))
+            .and(path("/api/v1/bot/challenge/accept/qaTq1dsIi3-i"))
+            .and(|req: &Request| {
+                verify_auth_header(req, "test_key");
+                true
+            })
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "data": {
+                        "game_id": "789",
+                        "message": "Challenge accepted"
+                    },
+                    "success": true
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+
+        let api = HiveGameApi::new(mock_server.uri());
+        let result = api.accept_challenge("qaTq1dsIi3-i", "test_key").await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_accept_challenge_error() {
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Create mock response for failed accept challenge request
+        Mock::given(method("GET"))
+            .and(path("/api/v1/bot/challenge/accept/invalid-id"))
+            .and(|req: &Request| {
+                verify_auth_header(req, "test_key");
+                true
+            })
+            .respond_with(
+                ResponseTemplate::new(404).set_body_string("Challenge not found")
+            )
+            .mount(&mock_server)
+            .await;
+
+        let api = HiveGameApi::new(mock_server.uri());
+        let result = api.accept_challenge("invalid-id", "test_key").await;
+
+        assert!(matches!(result,
+            Err(ApiError::ApiError {
+                status_code,
+                message
+            }) if status_code == 404 && message == "Challenge not found"
         ));
     }
 }

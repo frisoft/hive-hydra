@@ -116,6 +116,18 @@ async fn producer_task(
             Ok(challenge_ids) => {
                 if !challenge_ids.is_empty() {
                     info!("Bot {} has {} pending challenges: {:?}", bot.name, challenge_ids.len(), challenge_ids);
+                    
+                    // Accept each challenge
+                    for challenge_id in challenge_ids {
+                        match api.accept_challenge(&challenge_id, &token).await {
+                            Ok(_) => {
+                                info!("Bot {} successfully accepted challenge {}", bot.name, challenge_id);
+                            },
+                            Err(e) => {
+                                error!("Bot {} failed to accept challenge {}: {}", bot.name, challenge_id, e);
+                            }
+                        }
+                    }
                 } else {
                     debug!("No challenges found for bot {}", bot.name);
                 }
