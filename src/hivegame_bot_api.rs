@@ -527,7 +527,6 @@ mod tests {
             black_id: "".to_string(),
             white_id: "".to_string(),
             current_player_id: "".to_string(),
-            finished: false,
         };
 
         let expected = "Base;InProgress;White[3];wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1";
