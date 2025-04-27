@@ -40,7 +40,10 @@ impl Config {
         // Process bot-specific environment variables
         let env_vars: HashMap<String, String> = std::env::vars().collect();
         for bot in &mut config.bots {
-            let prefix = format!("HIVE_HYDRA_BOT_{}_", bot.name.to_uppercase().replace('-', "_"));
+            let prefix = format!(
+                "HIVE_HYDRA_BOT_{}_",
+                bot.name.to_uppercase().replace('-', "_")
+            );
 
             if let Some(value) = env_vars.get(&format!("{}EMAIL", prefix)) {
                 bot.email = value.clone();

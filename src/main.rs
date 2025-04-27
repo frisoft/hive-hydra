@@ -1,8 +1,8 @@
+use hivegame_bot_api::HiveGame;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, Semaphore};
-use tracing::{info, warn, error, debug};
-use hivegame_bot_api::HiveGame;
+use tracing::{debug, error, info, warn};
 
 mod turn_tracker;
 use turn_tracker::{TurnTracker, TurnTracking};
@@ -33,7 +33,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Load configuration from specified file
     let config = Config::load_from(cli.config)?;
-    info!("Configuration loaded, max concurrent processes: {}", config.max_concurrent_processes);
+    info!(
+        "Configuration loaded, max concurrent processes: {}",
+        config.max_concurrent_processes
+    );
 
     // Create a shared HiveGameApi instance
     let api = Arc::new(HiveGameApi::new(config.base_url.clone()));
@@ -44,7 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let active_processes = Arc::new(Mutex::new(Vec::new()));
     let turn_tracker = TurnTracker::new();
 
-    info!("Initialized channel with capacity: {}", config.queue_capacity);
+    info!(
+        "Initialized channel with capacity: {}",
+        config.queue_capacity
+    );
 
     let cleanup_tracker = turn_tracker.clone();
     tokio::spawn(async move {
@@ -58,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Spawn a producer task for each bot
     let mut producer_handles = Vec::new();
     info!("Starting producer tasks for {} bots", config.bots.len());
-    
+
     for bot in config.bots {
         info!("Spawning producer task for bot: {}", bot.name);
         let api_clone = api.clone();
@@ -106,7 +112,7 @@ async fn producer_task(
         Ok(token) => {
             info!("Authentication successful for bot: {}", bot.name);
             token
-        },
+        }
         Err(e) => {
             error!("Authentication failed for bot {}: {}", bot.name, e);
             return Err(Box::new(e));
@@ -118,30 +124,45 @@ async fn producer_task(
         match api.challenges(&token).await {
             Ok(challenge_ids) => {
                 if !challenge_ids.is_empty() {
-                    info!("Bot {} has {} pending challenges: {:?}", bot.name, challenge_ids.len(), challenge_ids);
-                    
+                    info!(
+                        "Bot {} has {} pending challenges: {:?}",
+                        bot.name,
+                        challenge_ids.len(),
+                        challenge_ids
+                    );
+
                     // Accept each challenge
                     for challenge_id in challenge_ids {
                         match api.accept_challenge(&challenge_id, &token).await {
                             Ok(_) => {
-                                info!("Bot {} successfully accepted challenge {}", bot.name, challenge_id);
-                            },
+                                info!(
+                                    "Bot {} successfully accepted challenge {}",
+                                    bot.name, challenge_id
+                                );
+                            }
                             Err(e) => {
-                                error!("Bot {} failed to accept challenge {}: {}", bot.name, challenge_id, e);
+                                error!(
+                                    "Bot {} failed to accept challenge {}: {}",
+                                    bot.name, challenge_id, e
+                                );
                             }
                         }
                     }
                 } else {
                     debug!("No challenges found for bot {}", bot.name);
                 }
-            },
+            }
             Err(e) => error!("Failed to fetch challenges for bot {}: {}", bot.name, e),
         }
 
         // Use real get_games API with fixed endpoint instead of URI from configuration
         match api.get_games(&token).await {
             Ok(game_strings) => {
-                debug!("Retrieved {} games for bot {}", game_strings.len(), bot.name);
+                debug!(
+                    "Retrieved {} games for bot {}",
+                    game_strings.len(),
+                    bot.name
+                );
                 for game in game_strings {
                     let hash = game.hash();
 
@@ -182,7 +203,7 @@ async fn consumer_task(
     api: Arc<HiveGameApi>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("Consumer task started");
-    
+
     loop {
         let mut rx = receiver.lock().await;
         if let Some(turn) = rx.recv().await {
@@ -212,18 +233,27 @@ async fn process_turn(
     let _permit = match semaphore.acquire().await {
         Ok(permit) => permit,
         Err(e) => {
-            error!("Failed to acquire semaphore for bot {}: {}", turn.bot.name, e);
+            error!(
+                "Failed to acquire semaphore for bot {}: {}",
+                turn.bot.name, e
+            );
             turn_tracker.processed(turn.hash).await;
             return;
         }
     };
 
-    debug!("Processing turn for bot {} with hash {}", turn.bot.name, turn.hash);
+    debug!(
+        "Processing turn for bot {} with hash {}",
+        turn.bot.name, turn.hash
+    );
 
     let child = match ai::spawn_process(&turn.bot.ai_command, &turn.bot.name) {
         Ok(child) => child,
         Err(e) => {
-            error!("Failed to spawn AI process for bot {}: {}", turn.bot.name, e);
+            error!(
+                "Failed to spawn AI process for bot {}: {}",
+                turn.bot.name, e
+            );
             turn_tracker.processed(turn.hash).await;
             return;
         }
@@ -235,17 +265,23 @@ async fn process_turn(
     match ai::run_commands(child, &game_string, &turn.bot.bestmove_command_args).await {
         Ok(bestmove) => {
             info!("Bot '{}' bestmove: '{}'", turn.bot.name, bestmove);
-            
+
             // Determine the game identifier to use (prefer nanoid, fall back to game_id)
             let game_identifier = match &turn.game.nanoid {
                 Some(id) => id.clone(),
-                None => turn.game.game_id.clone()
+                None => turn.game.game_id.clone(),
             };
-            
+
             // Send the move to the server using the token
-            match api.play_move(&game_identifier, &bestmove, &turn.token).await {
+            match api
+                .play_move(&game_identifier, &bestmove, &turn.token)
+                .await
+            {
                 Ok(_) => {
-                    info!("Move '{}' sent successfully for game {}", bestmove, game_identifier);
+                    info!(
+                        "Move '{}' sent successfully for game {}",
+                        bestmove, game_identifier
+                    );
                 }
                 Err(e) => {
                     error!("Failed to send move for bot {}: {}", turn.bot.name, e);
@@ -253,12 +289,18 @@ async fn process_turn(
             }
         }
         Err(e) => {
-            error!("Error running AI commands for bot '{}': '{}'", turn.bot.name, e);
+            error!(
+                "Error running AI commands for bot '{}': '{}'",
+                turn.bot.name, e
+            );
         }
     }
 
     turn_tracker.processed(turn.hash).await;
-    debug!("Turn processed for bot {} with hash {}", turn.bot.name, turn.hash);
+    debug!(
+        "Turn processed for bot {} with hash {}",
+        turn.bot.name, turn.hash
+    );
 }
 
 async fn cleanup_processes(active_processes: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>) {

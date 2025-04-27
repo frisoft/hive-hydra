@@ -1,6 +1,6 @@
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
-use tracing::{info};
+use tracing::info;
 
 #[derive(Debug)]
 pub enum AiError {
@@ -137,9 +137,9 @@ pub async fn run_commands(
 
     // Send newgame command
     let newgame_command = format!("newgame {}\n", game_string);
-    
+
     info!("------- Sending newgame command: {}", newgame_command);
-    
+
     stdin.write_all(newgame_command.as_bytes())?;
 
     // Send bestmove command

@@ -1,10 +1,10 @@
 use reqwest::{Client, Error as ReqwestError};
-use std::time::Duration;
 use serde::{Deserialize, Serialize};
-use serde_json::{Error as JsonError, json};
+use serde_json::{json, Error as JsonError};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use tracing::{info};
+use std::time::Duration;
+use tracing::info;
 
 const API_TIMEOUT: u64 = 10; // 10 seconds timeout for API calls
 
@@ -26,7 +26,7 @@ pub struct HiveGame {
     #[serde(rename = "id")]
     pub game_id: String,
     #[serde(rename = "time_base")]
-    pub time: i32,  // Changed from String to i32 to match API response
+    pub time: i32, // Changed from String to i32 to match API response
     #[serde(default)]
     pub opponent_username: String,
     pub game_type: String,
@@ -111,7 +111,7 @@ impl HiveGame {
         // If moves is empty, don't include a trailing semicolon
         if self.moves.is_empty() {
             info!("------- Empty moves string, bot playing as white");
-            
+
             return format!(
                 "{};{};{}",
                 self.game_type,
@@ -119,23 +119,23 @@ impl HiveGame {
                 "White[1]".to_string(),
             );
         }
-        
+
         // First trim any trailing semicolons and spaces from the moves string
         let trimmed_moves = self.moves.trim_end_matches(|c| c == ';' || c == ' ');
-        
+
         // Now remove spaces before semicolons throughout the string
         let cleaned_moves = trimmed_moves
-            .replace(" ;", ";")  // Replace spaces followed by semicolons
+            .replace(" ;", ";") // Replace spaces followed by semicolons
             .replace(" ;", ";"); // Do it twice to catch potential double spaces (could use regex for better solution)
-        
-        info!("------- Original Moves: [{}], Cleaned: [{}]", self.moves, cleaned_moves);
-        
+
+        info!(
+            "------- Original Moves: [{}], Cleaned: [{}]",
+            self.moves, cleaned_moves
+        );
+
         format!(
             "{};{};{};{}",
-            self.game_type,
-            self.game_status,
-            self.player_turn,
-            cleaned_moves
+            self.game_type, self.game_status, self.player_turn, cleaned_moves
         )
     }
 }
@@ -164,21 +164,19 @@ impl HiveGameApi {
     /// Authenticate with email and password to get a token
     pub async fn auth(&self, email: &str, password: &str) -> Result<String, ApiError> {
         let url = format!("{}/api/v1/auth/token", self.base_url);
-        
+
         let auth_request = AuthRequest {
             email: email.to_string(),
             password: password.to_string(),
         };
-        
-        // Print the request body for debugging
-        println!("Request body: {}", serde_json::to_string_pretty(&auth_request).unwrap());
 
-        let response = self
-            .client
-            .post(&url)
-            .json(&auth_request)
-            .send()
-            .await?;
+        // Print the request body for debugging
+        println!(
+            "Request body: {}",
+            serde_json::to_string_pretty(&auth_request).unwrap()
+        );
+
+        let response = self.client.post(&url).json(&auth_request).send().await?;
 
         let status = response.status();
         if (!status.is_success()) {
@@ -190,7 +188,7 @@ impl HiveGameApi {
 
         let response_text = response.text().await?;
         // println!("Response body: {}", response_text);
-        
+
         // Parse the response JSON from the saved text
         let auth_response: AuthResponse = serde_json::from_str(&response_text)?;
         Ok(auth_response.data.token)
@@ -219,10 +217,10 @@ impl HiveGameApi {
         // Get response as text and print it
         let response_text = response.text().await?;
         println!("Pending games response: {}", response_text);
-        
+
         // Parse the response JSON using the nested structure
         let games_response: GamesResponse = serde_json::from_str(&response_text)?;
-        
+
         // Extract just the games array from the nested structure
         Ok(games_response.data.games)
     }
@@ -235,7 +233,7 @@ impl HiveGameApi {
         token: &str,
     ) -> Result<(), ApiError> {
         let url = format!("{}/api/v1/bot/games/play", self.base_url);
-        
+
         // Create a PlayMove struct without manual escaping
         let payload = PlayMove {
             game_id: game_id.to_string(),
@@ -244,14 +242,15 @@ impl HiveGameApi {
 
         info!("-------- Using PlayMove url: {:?}", url);
         info!("-------- Using PlayMove struct: {:?}", payload);
-       
-        let response = self.client
+
+        let response = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", token))
             .json(&payload)
             .send()
             .await?;
-        
+
         info!("-------- SENT");
 
         let status = response.status();
@@ -287,23 +286,28 @@ impl HiveGameApi {
 
         // Deserialize the response into our ChallengesResponse struct
         let response_json: ChallengesResponse = response.json().await?;
-        
+
         // Extract challenge IDs into a vector
-        let challenge_ids = response_json.data.challenges
+        let challenge_ids = response_json
+            .data
+            .challenges
             .iter()
             .map(|challenge| challenge.challenge_id.clone())
             .collect();
-        
+
         // Print the challenges for debugging
         println!("Challenges received: {:?}", challenge_ids);
-        
+
         Ok(challenge_ids)
     }
 
     /// Accept a challenge for a bot
     /// Takes a challenge ID and sends a request to accept it
     pub async fn accept_challenge(&self, challenge_id: &str, token: &str) -> Result<(), ApiError> {
-        let url = format!("{}/api/v1/bot/challenge/accept/{}", self.base_url, challenge_id);
+        let url = format!(
+            "{}/api/v1/bot/challenge/accept/{}",
+            self.base_url, challenge_id
+        );
 
         let response = self
             .client
@@ -322,7 +326,10 @@ impl HiveGameApi {
 
         // Print response for debugging
         let response_text = response.text().await?;
-        println!("Challenge acceptance response for {}: {}", challenge_id, response_text);
+        println!(
+            "Challenge acceptance response for {}: {}",
+            challenge_id, response_text
+        );
 
         Ok(())
     }
@@ -331,15 +338,17 @@ impl HiveGameApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::Request;
-    use wiremock::matchers::{method, path, body_json};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
     use serde_json::json;
+    use wiremock::matchers::{body_json, method, path};
+    use wiremock::Request;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn verify_auth_header(req: &Request, expected_key: &str) {
-        let auth_header = req.headers.get(&"Authorization".parse().unwrap())
+        let auth_header = req
+            .headers
+            .get(&"Authorization".parse().unwrap())
             .expect("Authorization header missing");
-        
+
         let expected_value = format!("Bearer {}", expected_key);
         assert_eq!(auth_header[0], expected_value);
     }
@@ -356,14 +365,12 @@ mod tests {
                 "email": "bot@example.com",
                 "password": "hivegame"
             })))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "data": {
-                        "token": "test_token_123"
-                    },
-                    "success": true
-                }))
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "token": "test_token_123"
+                },
+                "success": true
+            })))
             .mount(&mock_server)
             .await;
 
@@ -385,9 +392,7 @@ mod tests {
                 "email": "wrong@example.com",
                 "password": "wrong_password"
             })))
-            .respond_with(
-                ResponseTemplate::new(401).set_body_string("Unauthorized")
-            )
+            .respond_with(ResponseTemplate::new(401).set_body_string("Unauthorized"))
             .mount(&mock_server)
             .await;
 
@@ -414,34 +419,32 @@ mod tests {
                 verify_auth_header(req, "test_key");
                 true
             })
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "data": {
-                        "bot": "bot1@example.com",
-                        "games": [
-                            {
-                                "id": "123",
-                                "time_base": 20,
-                                "opponent_username": "player1",
-                                "game_type": "Base+PLM",
-                                "game_status": "InProgress",
-                                "player_turn": "White[3]",
-                                "history": "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1"
-                            },
-                            {
-                                "id": "456",
-                                "time_base": 10,
-                                "opponent_username": "player2",
-                                "game_type": "Base",
-                                "game_status": "InProgress",
-                                "player_turn": "Black[2]",
-                                "history": "bS1;wG1 -bS1;bA1 bS1/;wG2 /wG1"
-                            }
-                        ]
-                    },
-                    "success": true
-                }))
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "bot": "bot1@example.com",
+                    "games": [
+                        {
+                            "id": "123",
+                            "time_base": 20,
+                            "opponent_username": "player1",
+                            "game_type": "Base+PLM",
+                            "game_status": "InProgress",
+                            "player_turn": "White[3]",
+                            "history": "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1"
+                        },
+                        {
+                            "id": "456",
+                            "time_base": 10,
+                            "opponent_username": "player2",
+                            "game_type": "Base",
+                            "game_status": "InProgress",
+                            "player_turn": "Black[2]",
+                            "history": "bS1;wG1 -bS1;bA1 bS1/;wG2 /wG1"
+                        }
+                    ]
+                },
+                "success": true
+            })))
             .mount(&mock_server)
             .await;
 
@@ -546,24 +549,22 @@ mod tests {
                 verify_auth_header(req, "test_key");
                 true
             })
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "data": {
-                        "bot": "bot1@example.com",
-                        "challenges": [
-                            {
-                                "challenge_id": "qaTq1dsIi3-i",
-                                "game_type": "Base+MLP"
-                            },
-                            {
-                                "challenge_id": "abCdEfGhIj-z",
-                                "game_type": "Base"
-                            }
-                        ]
-                    },
-                    "success": true
-                }))
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "bot": "bot1@example.com",
+                    "challenges": [
+                        {
+                            "challenge_id": "qaTq1dsIi3-i",
+                            "game_type": "Base+MLP"
+                        },
+                        {
+                            "challenge_id": "abCdEfGhIj-z",
+                            "game_type": "Base"
+                        }
+                    ]
+                },
+                "success": true
+            })))
             .mount(&mock_server)
             .await;
 
@@ -588,9 +589,7 @@ mod tests {
                 verify_auth_header(req, "invalid_key");
                 true
             })
-            .respond_with(
-                ResponseTemplate::new(401).set_body_string("Unauthorized")
-            )
+            .respond_with(ResponseTemplate::new(401).set_body_string("Unauthorized"))
             .mount(&mock_server)
             .await;
 
@@ -617,15 +616,13 @@ mod tests {
                 verify_auth_header(req, "test_key");
                 true
             })
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "data": {
-                        "game_id": "789",
-                        "message": "Challenge accepted"
-                    },
-                    "success": true
-                }))
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "game_id": "789",
+                    "message": "Challenge accepted"
+                },
+                "success": true
+            })))
             .mount(&mock_server)
             .await;
 
@@ -647,9 +644,7 @@ mod tests {
                 verify_auth_header(req, "test_key");
                 true
             })
-            .respond_with(
-                ResponseTemplate::new(404).set_body_string("Challenge not found")
-            )
+            .respond_with(ResponseTemplate::new(404).set_body_string("Challenge not found"))
             .mount(&mock_server)
             .await;
 

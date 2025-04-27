@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use tracing::{info};
+use tracing::info;
 
 // pub const HASH_RETENTION_PERIOD: Duration = Duration::from_secs(3600);
 pub const HASH_RETENTION_PERIOD: Duration = Duration::from_secs(10);
