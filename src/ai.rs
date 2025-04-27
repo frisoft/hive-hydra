@@ -4,17 +4,17 @@ use tracing::info;
 
 #[derive(Debug)]
 pub enum AiError {
-    ProcessError(std::io::Error),
-    ParseError(ParseError),
-    OutputError(std::string::FromUtf8Error),
+    Process(std::io::Error),
+    Parse(ParseError),
+    Output(std::string::FromUtf8Error),
 }
 
 impl std::fmt::Display for AiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AiError::ProcessError(e) => write!(f, "Process error: {}", e),
-            AiError::ParseError(e) => write!(f, "Parse error: {}", e),
-            AiError::OutputError(e) => write!(f, "Output encoding error: {}", e),
+            AiError::Process(e) => write!(f, "Process error: {}", e),
+            AiError::Parse(e) => write!(f, "Parse error: {}", e),
+            AiError::Output(e) => write!(f, "Output encoding error: {}", e),
         }
     }
 }
@@ -23,19 +23,19 @@ impl std::error::Error for AiError {}
 
 impl From<std::io::Error> for AiError {
     fn from(error: std::io::Error) -> Self {
-        AiError::ProcessError(error)
+        AiError::Process(error)
     }
 }
 
 impl From<ParseError> for AiError {
     fn from(error: ParseError) -> Self {
-        AiError::ParseError(error)
+        AiError::Parse(error)
     }
 }
 
 impl From<std::string::FromUtf8Error> for AiError {
     fn from(error: std::string::FromUtf8Error) -> Self {
-        AiError::OutputError(error)
+        AiError::Output(error)
     }
 }
 

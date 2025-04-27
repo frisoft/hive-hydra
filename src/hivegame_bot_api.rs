@@ -13,7 +13,7 @@ pub enum ApiError {
     #[error("Request failed: {0}")]
     RequestError(#[from] ReqwestError),
     #[error("API error: {status_code} - {message}")]
-    ApiError {
+    ServerError {
         status_code: reqwest::StatusCode,
         message: String,
     },
@@ -44,9 +44,8 @@ pub struct HiveGame {
     pub white_id: String,
     #[serde(default)]
     pub current_player_id: String,
-    #[serde(default, skip_serializing)]
-    pub finished: bool,
-    // Add more fields as needed
+    // #[serde(default, skip_serializing)]
+    // pub finished: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -63,7 +62,7 @@ struct AuthResponseData {
 #[derive(Debug, Deserialize)]
 pub struct AuthResponse {
     data: AuthResponseData,
-    success: bool,
+    // success: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,26 +73,26 @@ struct Challenge {
 
 #[derive(Debug, Deserialize)]
 struct ChallengesData {
-    bot: String,
+    // bot: String,
     challenges: Vec<Challenge>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ChallengesResponse {
     data: ChallengesData,
-    success: bool,
+    // success: bool,
 }
 
 #[derive(Debug, Deserialize)]
 struct GamesData {
-    bot: String,
+    // bot: String,
     games: Vec<HiveGame>,
 }
 
 #[derive(Debug, Deserialize)]
 struct GamesResponse {
     data: GamesData,
-    success: bool,
+    // success: bool,
 }
 
 impl HiveGame {
@@ -177,8 +176,8 @@ impl HiveGameApi {
         let response = self.client.post(&url).json(&auth_request).send().await?;
 
         let status = response.status();
-        if !status.is_success() {
-            return Err(ApiError::ApiError {
+        if (!status.is_success()) {
+            return Err(ApiError::ServerError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
             });
@@ -205,8 +204,8 @@ impl HiveGameApi {
             .await?;
 
         let status = response.status();
-        if !status.is_success() {
-            return Err(ApiError::ApiError {
+        if (!status.is_success()) {
+            return Err(ApiError::ServerError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
             });
@@ -252,8 +251,8 @@ impl HiveGameApi {
         info!("-------- SENT");
 
         let status = response.status();
-        if !status.is_success() {
-            return Err(ApiError::ApiError {
+        if (!status.is_success()) {
+            return Err(ApiError::ServerError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
             });
@@ -275,8 +274,8 @@ impl HiveGameApi {
             .await?;
 
         let status = response.status();
-        if !status.is_success() {
-            return Err(ApiError::ApiError {
+        if (!status.is_success()) {
+            return Err(ApiError::ServerError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
             });
@@ -315,8 +314,8 @@ impl HiveGameApi {
             .await?;
 
         let status = response.status();
-        if !status.is_success() {
-            return Err(ApiError::ApiError {
+        if (!status.is_success()) {
+            return Err(ApiError::ServerError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
             });
@@ -398,7 +397,7 @@ mod tests {
         let result = api.auth("wrong@example.com", "wrong_password").await;
 
         assert!(matches!(result,
-            Err(ApiError::ApiError {
+            Err(ApiError::ServerError {
                 status_code,
                 message
             }) if status_code == 401 && message == "Unauthorized"
@@ -507,7 +506,7 @@ mod tests {
         let result = api.get_games("test_key").await;
 
         assert!(matches!(result,
-            Err(ApiError::ApiError {
+            Err(ApiError::ServerError {
                 status_code,
                 message
             }) if status_code == 404 && message == "Not found"
@@ -595,7 +594,7 @@ mod tests {
         let result = api.challenges("invalid_key").await;
 
         assert!(matches!(result,
-            Err(ApiError::ApiError {
+            Err(ApiError::ServerError {
                 status_code,
                 message
             }) if status_code == 401 && message == "Unauthorized"
@@ -650,7 +649,7 @@ mod tests {
         let result = api.accept_challenge("invalid-id", "test_key").await;
 
         assert!(matches!(result,
-            Err(ApiError::ApiError {
+            Err(ApiError::ServerError {
                 status_code,
                 message
             }) if status_code == 404 && message == "Challenge not found"
