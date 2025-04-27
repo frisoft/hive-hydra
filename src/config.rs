@@ -62,7 +62,7 @@ mod tests {
     use super::*;
     use std::env;
     use std::fs;
-    use std::io::Write;
+    
     use tempfile::TempDir;
 
     #[test]
