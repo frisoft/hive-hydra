@@ -116,17 +116,15 @@ impl HiveGame {
                 "{};{};{}",
                 self.game_type,
                 self.game_status,
-                "White[1]".to_string(),
+                "White[1]".to_string()
             );
         }
 
-        // First trim any trailing semicolons and spaces from the moves string
-        let trimmed_moves = self.moves.trim_end_matches(|c| c == ';' || c == ' ');
+        // First create an owned string with spaces before semicolons removed
+        let moves_without_spaces = self.moves.replace(" ;", ";");
 
-        // Now remove spaces before semicolons throughout the string
-        let cleaned_moves = trimmed_moves
-            .replace(" ;", ";") // Replace spaces followed by semicolons
-            .replace(" ;", ";"); // Do it twice to catch potential double spaces (could use regex for better solution)
+        // Then trim trailing semicolons and spaces
+        let cleaned_moves = moves_without_spaces.trim_end_matches(";");
 
         info!(
             "------- Original Moves: [{}], Cleaned: [{}]",
