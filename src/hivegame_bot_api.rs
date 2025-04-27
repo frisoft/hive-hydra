@@ -108,10 +108,27 @@ impl HiveGame {
     }
 
     pub fn game_string(&self) -> String {
-        // Trim any trailing semicolons and spaces from the moves string
-        let cleaned_moves = self.moves.trim_end_matches(|c| c == ';' || c == ' ');
+        // If moves is empty, don't include a trailing semicolon
+        if self.moves.is_empty() {
+            info!("------- Empty moves string, bot playing as white");
+            
+            return format!(
+                "{};{};{}",
+                self.game_type,
+                self.game_status,
+                "White[1]".to_string(),
+            );
+        }
         
-        // info!("------- Original Moves: [{}], Cleaned: [{}]", self.moves, cleaned_moves);
+        // First trim any trailing semicolons and spaces from the moves string
+        let trimmed_moves = self.moves.trim_end_matches(|c| c == ';' || c == ' ');
+        
+        // Now remove spaces before semicolons throughout the string
+        let cleaned_moves = trimmed_moves
+            .replace(" ;", ";")  // Replace spaces followed by semicolons
+            .replace(" ;", ";"); // Do it twice to catch potential double spaces (could use regex for better solution)
+        
+        info!("------- Original Moves: [{}], Cleaned: [{}]", self.moves, cleaned_moves);
         
         format!(
             "{};{};{};{}",
