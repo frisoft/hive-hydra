@@ -176,7 +176,7 @@ impl HiveGameApi {
         let response = self.client.post(&url).json(&auth_request).send().await?;
 
         let status = response.status();
-        if (!status.is_success()) {
+        if !status.is_success() {
             return Err(ApiError::ServerError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
@@ -204,7 +204,7 @@ impl HiveGameApi {
             .await?;
 
         let status = response.status();
-        if (!status.is_success()) {
+        if !status.is_success() {
             return Err(ApiError::ServerError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
@@ -251,7 +251,7 @@ impl HiveGameApi {
         info!("-------- SENT");
 
         let status = response.status();
-        if (!status.is_success()) {
+        if !status.is_success() {
             return Err(ApiError::ServerError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
@@ -274,7 +274,7 @@ impl HiveGameApi {
             .await?;
 
         let status = response.status();
-        if (!status.is_success()) {
+        if !status.is_success() {
             return Err(ApiError::ServerError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
@@ -314,7 +314,7 @@ impl HiveGameApi {
             .await?;
 
         let status = response.status();
-        if (!status.is_success()) {
+        if !status.is_success() {
             return Err(ApiError::ServerError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),
