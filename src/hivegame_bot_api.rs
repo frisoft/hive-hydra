@@ -1,6 +1,6 @@
 use reqwest::{Client, Error as ReqwestError};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Error as JsonError};
+use serde_json::Error as JsonError;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
@@ -116,7 +116,7 @@ impl HiveGame {
                 "{};{};{}",
                 self.game_type,
                 self.game_status,
-                "White[1]".to_string()
+                "White[1]"
             );
         }
 
@@ -177,7 +177,7 @@ impl HiveGameApi {
         let response = self.client.post(&url).json(&auth_request).send().await?;
 
         let status = response.status();
-        if (!status.is_success()) {
+        if !status.is_success() {
             return Err(ApiError::ApiError {
                 status_code: status,
                 message: response.text().await.unwrap_or_default(),

@@ -2,7 +2,7 @@ use hivegame_bot_api::HiveGame;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, Semaphore};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 mod turn_tracker;
 use turn_tracker::{TurnTracker, TurnTracking};
