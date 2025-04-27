@@ -123,6 +123,12 @@ impl HiveGame {
     }
 }
 
+#[derive(Debug, Serialize)]
+struct PlayMove {
+    game_id: String,
+    piece_pos: String,
+}
+
 pub struct HiveGameApi {
     client: Client,
     base_url: String,
@@ -153,7 +159,6 @@ impl HiveGameApi {
         let response = self
             .client
             .post(&url)
-            .header("Content-Type", "application/json")
             .json(&auth_request)
             .send()
             .await?;
@@ -205,29 +210,6 @@ impl HiveGameApi {
         Ok(games_response.data.games)
     }
 
-    /// Function to use for manual testing without real connection
-    pub async fn fake_get_games(
-        &self,
-        _uri: &str,
-        _token: &str,
-    ) -> Result<Vec<HiveGame>, ApiError> {
-        let game = HiveGame {
-            game_id: "123".to_string(),
-            time: 20,
-            opponent_username: "player1".to_string(),
-            game_type: "Base+PLM".to_string(),
-            game_status: "InProgress".to_string(),
-            player_turn: "White[3]".to_string(),
-            moves: "wS1;bG1 -wS1;wA1 wS1/;bG2 /bG1".to_string(),
-            nanoid: None,
-            black_id: "".to_string(),
-            white_id: "".to_string(),
-            current_player_id: "".to_string(),
-            finished: false,
-        };
-        Ok(vec![game])
-    }
-
     /// Send a move to the game
     pub async fn play_move(
         &self,
@@ -237,26 +219,23 @@ impl HiveGameApi {
     ) -> Result<(), ApiError> {
         let url = format!("{}/api/v1/bot/games/play", self.base_url);
         
-        // Create a payload that includes both the game_id and the piece_pos (move notation)
-        let payload = json!({
-            "game_id": game_id,
-            "piece_pos": move_notation
-        });
-        
-        // Log the payload for debugging
-        info!("-------- payload: {}", serde_json::to_string(&payload).unwrap_or_default());
+        // Create a PlayMove struct without manual escaping
+        let payload = PlayMove {
+            game_id: game_id.to_string(),
+            piece_pos: move_notation.to_string(),
+        };
 
-        // Pre-serialize the payload to ensure proper JSON escaping
-        let serialized_payload = serde_json::to_string(&payload)?;
-
-        let response = self
-            .client
+        info!("-------- Using PlayMove url: {:?}", url);
+        info!("-------- Using PlayMove struct: {:?}", payload);
+       
+        let response = self.client
             .post(&url)
             .header("Authorization", format!("Bearer {}", token))
-            .header("Content-Type", "application/json")
-            .body(serialized_payload)
+            .json(&payload)
             .send()
             .await?;
+        
+        info!("-------- SENT");
 
         let status = response.status();
         if !status.is_success() {

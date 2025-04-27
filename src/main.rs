@@ -35,6 +35,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = Config::load_from(cli.config)?;
     info!("Configuration loaded, max concurrent processes: {}", config.max_concurrent_processes);
 
+    // Create a shared HiveGameApi instance
+    let api = Arc::new(HiveGameApi::new(config.base_url.clone()));
+
     let (sender, receiver) = mpsc::channel(config.queue_capacity);
     let receiver = Arc::new(Mutex::new(receiver));
     let semaphore = Arc::new(Semaphore::new(config.max_concurrent_processes));
@@ -58,10 +61,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     
     for bot in config.bots {
         info!("Spawning producer task for bot: {}", bot.name);
+        let api_clone = api.clone();
         let producer_handle = tokio::spawn(producer_task(
             sender.clone(),
             turn_tracker.clone(),
-            config.base_url.clone(),
+            api_clone,
             bot,
         ));
         producer_handles.push(producer_handle);
@@ -72,6 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         semaphore,
         active_processes,
         turn_tracker.clone(),
+        api.clone(),
     ));
     info!("Consumer task started");
 
@@ -88,14 +93,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
-
 async fn producer_task(
     sender: mpsc::Sender<BotGameTurn>,
     turn_tracker: TurnTracker,
-    base_url: String,
+    api: Arc<HiveGameApi>,
     bot: BotConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let api = HiveGameApi::new(base_url);
     info!("Producer task started for bot: {}", bot.name);
 
     // Authenticate to get token
@@ -176,6 +179,7 @@ async fn consumer_task(
     semaphore: Arc<Semaphore>,
     active_processes: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     turn_tracker: TurnTracker,
+    api: Arc<HiveGameApi>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("Consumer task started");
     
@@ -185,10 +189,12 @@ async fn consumer_task(
             drop(rx);
             debug!("Received turn for bot {}", turn.bot.name);
 
+            let api_clone = api.clone();
             let handle = tokio::spawn(process_turn(
                 turn,
                 semaphore.clone(),
-                turn_tracker.clone()
+                turn_tracker.clone(),
+                api_clone,
             ));
 
             active_processes.lock().await.push(handle);
@@ -197,7 +203,12 @@ async fn consumer_task(
     }
 }
 
-async fn process_turn(turn: BotGameTurn, semaphore: Arc<Semaphore>, turn_tracker: TurnTracker) {
+async fn process_turn(
+    turn: BotGameTurn,
+    semaphore: Arc<Semaphore>,
+    turn_tracker: TurnTracker,
+    api: Arc<HiveGameApi>,
+) {
     let _permit = match semaphore.acquire().await {
         Ok(permit) => permit,
         Err(e) => {
@@ -232,7 +243,6 @@ async fn process_turn(turn: BotGameTurn, semaphore: Arc<Semaphore>, turn_tracker
             };
             
             // Send the move to the server using the token
-            let api = HiveGameApi::new(turn.bot.uri.clone());
             match api.play_move(&game_identifier, &bestmove, &turn.token).await {
                 Ok(_) => {
                     info!("Move '{}' sent successfully for game {}", bestmove, game_identifier);
