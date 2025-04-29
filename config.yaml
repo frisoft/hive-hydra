@@ -9,7 +9,7 @@ bots:
   - name: bot1  # This name is used in env vars like HIVE_HYDRA_BOT_BOT1_EMAIL
     ai_command: nokamute uhp --threads=1
     bestmove_command_args: depth 1
-    email: bot11@example.com  # Better to set this via environment variable
+    email: bot1@example.com  # Better to set this via environment variable
     password: password1      # Better to set this via environment variable
   
   - name: bot2

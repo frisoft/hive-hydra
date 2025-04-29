@@ -152,14 +152,7 @@ impl HiveGameApi {
             password: password.to_string(),
         };
 
-        // Print the request body for debugging
-        debug!(
-            "Request body: {}",
-            serde_json::to_string_pretty(&auth_request).unwrap()
-        );
-
         let response = self.client.post(&url).json(&auth_request).send().await?;
-
         let status = response.status();
         if !status.is_success() {
             return Err(ApiError::Server {
@@ -195,9 +188,7 @@ impl HiveGameApi {
             });
         }
 
-        // Get response as text and print it
         let response_text = response.text().await?;
-        debug!("Pending games response: {}", response_text);
 
         // Parse the response JSON using the nested structure
         let games_response: GamesResponse = serde_json::from_str(&response_text)?;
