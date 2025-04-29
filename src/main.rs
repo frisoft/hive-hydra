@@ -155,7 +155,6 @@ async fn producer_task(
             Err(e) => error!("Failed to fetch challenges for bot {}: {}", bot.name, e),
         }
 
-        // Use real get_games API with fixed endpoint instead of URI from configuration
         match api.get_games(&token).await {
             Ok(game_strings) => {
                 debug!(
