@@ -14,7 +14,6 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotConfig {
     pub name: String,
-    pub uri: String,
     pub ai_command: String,
     pub bestmove_command_args: String,
     pub email: String,
@@ -62,7 +61,7 @@ mod tests {
     use super::*;
     use std::env;
     use std::fs;
-    
+
     use tempfile::TempDir;
 
     #[test]
@@ -84,7 +83,6 @@ queue_capacity: 1000
 base_url: "https://hivegame.com"
 bots:
   - name: testbot1
-    uri: /games/testbot1
     ai_command: test_command
     bestmove_command_args: depth 1
     email: default_email1
@@ -132,7 +130,6 @@ queue_capacity: 1000
 base_url: "https://hivegame.com"
 bots:
   - name: test-bot
-    uri: /games/test-bot
     ai_command: test_command
     bestmove_command_args: depth 1
     email: default_email1

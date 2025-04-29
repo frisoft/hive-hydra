@@ -4,7 +4,7 @@ use serde_json::Error as JsonError;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
-use tracing::info;
+use tracing::debug;
 
 const API_TIMEOUT: u64 = 10; // 10 seconds timeout for API calls
 
@@ -44,8 +44,6 @@ pub struct HiveGame {
     pub white_id: String,
     #[serde(default)]
     pub current_player_id: String,
-    // #[serde(default, skip_serializing)]
-    // pub finished: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -62,37 +60,31 @@ struct AuthResponseData {
 #[derive(Debug, Deserialize)]
 pub struct AuthResponse {
     data: AuthResponseData,
-    // success: bool,
 }
 
 #[derive(Debug, Deserialize)]
 struct Challenge {
     challenge_id: String,
-    // We're omitting other fields as we only need the challenge_id
 }
 
 #[derive(Debug, Deserialize)]
 struct ChallengesData {
-    // bot: String,
     challenges: Vec<Challenge>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ChallengesResponse {
     data: ChallengesData,
-    // success: bool,
 }
 
 #[derive(Debug, Deserialize)]
 struct GamesData {
-    // bot: String,
     games: Vec<HiveGame>,
 }
 
 #[derive(Debug, Deserialize)]
 struct GamesResponse {
     data: GamesData,
-    // success: bool,
 }
 
 impl HiveGame {
@@ -109,14 +101,7 @@ impl HiveGame {
     pub fn game_string(&self) -> String {
         // If moves is empty, don't include a trailing semicolon
         if self.moves.is_empty() {
-            info!("------- Empty moves string, bot playing as white");
-
-            return format!(
-                "{};{};{}",
-                self.game_type,
-                self.game_status,
-                "White[1]"
-            );
+            return format!("{};{};{}", self.game_type, self.game_status, "White[1]");
         }
 
         // First create an owned string with spaces before semicolons removed
@@ -125,8 +110,8 @@ impl HiveGame {
         // Then trim trailing semicolons and spaces
         let cleaned_moves = moves_without_spaces.trim_end_matches(";");
 
-        info!(
-            "------- Original Moves: [{}], Cleaned: [{}]",
+        debug!(
+            "Original Moves: [{}], Cleaned: [{}]",
             self.moves, cleaned_moves
         );
 
@@ -168,7 +153,7 @@ impl HiveGameApi {
         };
 
         // Print the request body for debugging
-        println!(
+        debug!(
             "Request body: {}",
             serde_json::to_string_pretty(&auth_request).unwrap()
         );
@@ -184,7 +169,6 @@ impl HiveGameApi {
         }
 
         let response_text = response.text().await?;
-        // println!("Response body: {}", response_text);
 
         // Parse the response JSON from the saved text
         let auth_response: AuthResponse = serde_json::from_str(&response_text)?;
@@ -213,7 +197,7 @@ impl HiveGameApi {
 
         // Get response as text and print it
         let response_text = response.text().await?;
-        println!("Pending games response: {}", response_text);
+        debug!("Pending games response: {}", response_text);
 
         // Parse the response JSON using the nested structure
         let games_response: GamesResponse = serde_json::from_str(&response_text)?;
@@ -231,14 +215,10 @@ impl HiveGameApi {
     ) -> Result<(), ApiError> {
         let url = format!("{}/api/v1/bot/games/play", self.base_url);
 
-        // Create a PlayMove struct without manual escaping
         let payload = PlayMove {
             game_id: game_id.to_string(),
             piece_pos: move_notation.to_string(),
         };
-
-        info!("-------- Using PlayMove url: {:?}", url);
-        info!("-------- Using PlayMove struct: {:?}", payload);
 
         let response = self
             .client
@@ -247,8 +227,6 @@ impl HiveGameApi {
             .json(&payload)
             .send()
             .await?;
-
-        info!("-------- SENT");
 
         let status = response.status();
         if !status.is_success() {
@@ -292,8 +270,7 @@ impl HiveGameApi {
             .map(|challenge| challenge.challenge_id.clone())
             .collect();
 
-        // Print the challenges for debugging
-        println!("Challenges received: {:?}", challenge_ids);
+        debug!("Challenges received: {:?}", challenge_ids);
 
         Ok(challenge_ids)
     }
@@ -323,7 +300,7 @@ impl HiveGameApi {
 
         // Print response for debugging
         let response_text = response.text().await?;
-        println!(
+        debug!(
             "Challenge acceptance response for {}: {}",
             challenge_id, response_text
         );
