@@ -1,8 +1,10 @@
 # Hive Hydra
 
-A client/server wrapper for multiple Bot accounts on hivegame.com to and multiple UHP AI engines.
-
 *[THIS PROJECT MOVED INTO HIVE](https://github.com/hiveboardgame/hive/tree/main/hive-hydra)*
+
+
+
+A client/server wrapper for multiple Bot accounts on hivegame.com to and multiple UHP AI engines.
 
 
 
