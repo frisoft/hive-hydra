@@ -2,6 +2,10 @@
 
 A client/server wrapper for multiple Bot accounts on hivegame.com to and multiple UHP AI engines.
 
+*[THIS PROGECT MOVED INTO HIVE](https://github.com/hiveboardgame/hive/tree/main/hive-hydra)*
+
+
+
 
 ## Notes about Hive Bot API
 
